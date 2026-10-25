@@ -1,0 +1,58 @@
+{
+  "binary_sha256": "e5767925df037ee1bd951ad2ccaa51a3c8eccd17791e9679d8058394c6a04968",
+  "offset": 90742792,
+  "length": 23675061,
+  "bundle_sha256": "32485c2a8aa066dc1285d9de0fa168f6919007e1b33feda051b861628d68261c",
+  "companion_files": [
+    {
+      "source": ".agents/skills/reverse-engineer-anything/SKILL.md",
+      "destination": "skills/reverse-engineer-anything/SKILL.md",
+      "git_blob": "b23248073ec7dd4700ec9cec52adabb250153302",
+      "sha256": "883d7e599d5d578899f80fe2e2a84c098fc662f7bbbede7eca501d9bb1558fe8"
+    },
+    {
+      "source": ".agents/skills/reverse-engineer-anything/references/android-applications.md",
+      "destination": "skills/reverse-engineer-anything/references/android-applications.md",
+      "git_blob": "34fb4aa3438dabd2e7ed47e963b4c77f62d54a12",
+      "sha256": "ae66f8c26098fed21acf97ca2faeb6bd3c03fcdd7c6bac66323f8c45fd985095"
+    },
+    {
+      "source": ".agents/skills/reverse-engineer-anything/references/connection-and-recovery.md",
+      "destination": "skills/reverse-engineer-anything/references/connection-and-recovery.md",
+      "git_blob": "2e510b5f8738427529fcbb523ff5f7eacca24198",
+      "sha256": "ce2d122b873fb84d98cdb56afd84a34ee8de362b65760855838dfb29c2282e50"
+    },
+    {
+      "source": ".agents/skills/reverse-engineer-anything/references/evidence-workflows.md",
+      "destination": "skills/reverse-engineer-anything/references/evidence-workflows.md",
+      "git_blob": "a59d2b2acd8667b4a925dbf68508d9c2a91531ae",
+      "sha256": "c9595c275aa7a55953e4977be5e1ba5c39afffc83342e1a4762c61d2a01a0e49"
+    },
+    {
+      "source": ".agents/skills/reverse-engineer-anything/references/javascript-applications.md",
+      "destination": "skills/reverse-engineer-anything/references/javascript-applications.md",
+      "git_blob": "9c3508571da729ac6e69dc95f2bf7cd028741bbf",
+      "sha256": "d488f245da4de0d35f6e9ad7521aa94dee37c272622c897ad7c3ccdd33f8baeb"
+    },
+    {
+      "source": ".agents/skills/reverse-engineer-anything/references/native-and-artifacts.md",
+      "destination": "skills/reverse-engineer-anything/references/native-and-artifacts.md",
+      "git_blob": "7e0645a9b52a5233d9ab54548b527d72429babfc",
+      "sha256": "8f3f525ffdcc68c2ff6168e00ad0da1ed0fc1ca94b9268ca62fad8b50a87f0ff"
+    },
+    {
+      "source": ".agents/skills/reverse-engineer-anything/references/runtime-observation.md",
+      "destination": "skills/reverse-engineer-anything/references/runtime-observation.md",
+      "git_blob": "baddcda226fdf466bf2abd3035f9ac48f523c138",
+      "sha256": "852bd1e25e9f83f0e8c7d4f8441a043e2b2a7d5e39f729bf22ac77259a0207bd"
+    },
+    {
+      "source": "LICENSE",
+      "destination": "doctor-runtime/LICENSE-REA",
+      "git_blob": "2d476d24fa5a9ae2ab35e5fd121494049eb2ee5d",
+      "sha256": "798f9e4d18e49b30bf2f12696c8ced73dc4e1413da375a333d01281543a1ea8b"
+    }
+  ],
+  "companion_repository": "https://github.com/raymerjacque/rea",
+  "companion_commit": "8cfb213bf41fca5aacd0452ae4696cd2648b709a"
+}
