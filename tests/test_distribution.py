@@ -20,6 +20,13 @@ class Distribution(unittest.TestCase):
   self.assertTrue(os.access(launcher,os.X_OK));self.assertTrue((self.data/'current').is_symlink())
   desktop=self.desktop/'io.github.goglesystemop.rehkc.desktop';self.assertIn('StartupWMClass=REHKC',desktop.read_text())
   run(PACKAGE,*self.args);self.assertEqual(first,launcher.read_bytes());self.assertEqual(sentinel.read_text(),'USER SESSION')
+  # The installed copy must support read-only diagnostics, while refusing a
+  # recursive reinstall into its own source tree. Neither may mutate state.
+  receipt=self.data/'installation.json';before=receipt.read_bytes()
+  run(self.data/'current',*self.args,'--check')
+  self.assertEqual(before,receipt.read_bytes());self.assertEqual(first,launcher.read_bytes())
+  failed=run(self.data/'current',*self.args,ok=False)
+  self.assertNotEqual(failed.returncode,0);self.assertEqual(before,receipt.read_bytes())
   # Verify the executable portion is correctly parsed by the real GLib desktop parser.
   try:
    import gi

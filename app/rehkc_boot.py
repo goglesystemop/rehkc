@@ -19,6 +19,13 @@ sys.path.insert(0, str(APP))
 
 def tool_environment():
     """Explicit environment wins; discover optional existing tools without installing them."""
+    # A desktop session can predate ~/.local/bin, so its menu PATH may omit it.
+    # Keep explicitly configured PATH entries first, then discover user tools.
+    search_path = os.environ.get('PATH', '/usr/local/bin:/usr/bin:/bin').split(os.pathsep)
+    local_bin = str(Path.home()/'.local/bin')
+    if local_bin not in search_path:
+        search_path.append(local_bin)
+    os.environ['PATH'] = os.pathsep.join(search_path)
     if not os.environ.get('GHIDRA_INSTALL_DIR'):
         candidates=[]
         for pattern in [str(Path.home()/'.local/opt/ghidra*'),'/opt/ghidra*','/usr/share/ghidra*','/usr/local/share/ghidra*']:

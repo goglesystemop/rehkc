@@ -39,6 +39,14 @@ Radare2 için `radare2`/`r2` ve `rabin2`; RetDec için `retdec-decompiler` gerek
 Bunlar bulunmuyorsa araç durum ekranı eksik gösterir; sohbet yine kullanılabilir.
 GNU binutils karşılaştırma/strings/ELF audit işlemleri için gereklidir.
 
+Kullanıcıya özel araç komutları `~/.local/bin` altında tutulabilir. Masaüstü
+oturumunun PATH'i bu dizini henüz içermiyorsa REHKC onu mevcut PATH'in sonuna
+ekleyerek keşif yapar; mevcut PATH ve açık JAVA_HOME/GHIDRA_INSTALL_DIR/
+RETDEC_INSTALL_DIR tercihleri önceliğini korur. Ghidra ve RetDec için
+`~/.local/opt/ghidra*` ve `~/.local/opt/retdec*` dizinleri de taranır. JDK'nın
+`javac` komutuna verilen bir sembolik bağlantı gerçek JDK konumuna çözülür.
+Bu keşif, eksik araçları kendiliğinden indirmez veya kurmaz.
+
 ## ChatGPT planı
 
 Bulut seçeneği seçildiğinde Continue with ChatGPT, sistem varsayılan tarayıcısını
@@ -52,6 +60,15 @@ Bu dizini GitHub'a, hata raporuna veya herkese açık arşive eklemeyin. Resmî 
 https://developers.openai.com/siwc/token-sharing-open-source/sign-in
 
 ## Kaldırma
+
+Kurulu paketin bütünlük ve masaüstü bağımlılıklarını yazmadan tekrar denetlemek için:
+
+```sh
+~/.local/share/rehkc/current/install.sh --check
+```
+
+Özel konumda kurulduysa aynı `--data-dir` kullanılır. Bu kontrol kurulu paketten
+çalışabilir; aynı dizinden kendi üzerine yeniden kurulum koruması devam eder.
 
 Kurulu sürümün kendi kurucusu, kurulum kaydını kullanarak kaldırılabilir:
 
