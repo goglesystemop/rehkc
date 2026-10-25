@@ -1,6 +1,6 @@
 {
-  "version": "0.1.0",
-  "asset": "rehkc-0.1.0-cinnamon-x86_64.tar.gz",
-  "url": "https://github.com/goglesystemop/rehkc/releases/download/v0.1.0/rehkc-0.1.0-cinnamon-x86_64.tar.gz",
-  "sha256": "92f71f174e7467c2e5f480dfc674c6c426123c47d63d82758436141edc118527"
+  "version": "0.1.1",
+  "asset": "rehkc-0.1.1-cinnamon-x86_64.tar.gz",
+  "url": "https://github.com/goglesystemop/rehkc/releases/download/v0.1.1/rehkc-0.1.1-cinnamon-x86_64.tar.gz",
+  "sha256": "28babfa9bd5e7084d6e3e0bd3c2fe7ded26ec8120afeaaa7295d9c059778555e"
 }

@@ -7,7 +7,7 @@ REA 6.7.0 vendor motoru. Çalışan motor veya ajan skill'leri değiştirilmez.
 ```sh
 python3 packaging/build_release.py \
   --engine /path/to/verified/rea.bin \
-  --stage /tmp/rehkc-build/rehkc-0.1.0-cinnamon-x86_64 \
+  --stage /tmp/rehkc-build/rehkc-0.1.1-cinnamon-x86_64 \
   --output dist
 ```
 

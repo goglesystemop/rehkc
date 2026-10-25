@@ -7,7 +7,7 @@ Sistem OpenGL/X11/font/D-Bus kitaplıkları ve çalışan bir Cinnamon oturumu g
 
 ## Kurucu davranışı
 
-- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.1.0`.
+- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.1.1`.
 - Sabit sürüm bağlantısı: aynı dizinde `current`.
 - Komut: `~/.local/bin/rehkc`; menü: kullanıcı uygulama dizininde
   `io.github.goglesystemop.rehkc.desktop`.

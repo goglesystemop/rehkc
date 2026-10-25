@@ -1,4 +1,4 @@
-# 0.1.0 test sonuçları — 25 Ekim 2026
+# 0.1.1 test sonuçları — 25 Ekim 2026
 
 ## Doğrulanan ortamlar
 
@@ -50,6 +50,13 @@ OAuth/protokol regresyonları geçti; gerçek sohbet kota yenilendikten sonra ye
 sınanabilir. Kurucu hesap kotalarını veya ödeme ayarlarını değiştirmez.
 
 ## Testte bulunan ve giderilenler
+
+İlk 0.1.0 yayımından yapılan temiz klon/indirme/kurulum/açılış testi geçti;
+kurulu `current/install.sh --uninstall` komutu ise kaynak/kurulum dizini çakışma
+korumasına takıldı. 0.1.1 bu kontrolü kaldırma işlemi için düzeltir; tehlikeli
+kök/ev dizini kontrolü korunur. Dağıtım testi artık kaldırıcıyı kurulu sürümün
+kendi dizininden çağırır. Önceki 0.1.0 sürümü yerine 0.1.1 kullanılmalıdır.
+
 
 Temiz Ubuntu ortamında eksik GLib ve XCB Shape kitaplıkları kurulum listesine
 eklendi. Doctor kontrolü yalnız XCB eklentisini değil QtCore/QtGui/QtWidgets

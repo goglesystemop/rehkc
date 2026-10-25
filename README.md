@@ -10,12 +10,12 @@ sonraki aşamada yapılacak.
 ## Kurulum
 
 [Releases](https://github.com/goglesystemop/rehkc/releases) sayfasından
-`rehkc-0.1.0-cinnamon-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
+`rehkc-0.1.1-cinnamon-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
 
 ```sh
 sha256sum -c SHA256SUMS
-tar -xzf rehkc-0.1.0-cinnamon-x86_64.tar.gz
-cd rehkc-0.1.0-cinnamon-x86_64
+tar -xzf rehkc-0.1.1-cinnamon-x86_64.tar.gz
+cd rehkc-0.1.1-cinnamon-x86_64
 ./install.sh --check
 ./install.sh
 ```

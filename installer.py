@@ -102,7 +102,7 @@ def main():
   if not shutil.which('apt-get'):raise ValueError('This first release automates system dependencies only for Debian/Ubuntu/Mint. See docs/INSTALL.md.')
   subprocess.run(system_dependencies(),check=True)
  root=args.data_dir.expanduser().resolve();args.bin_dir=args.bin_dir.expanduser().absolute();args.desktop_dir=args.desktop_dir.expanduser().absolute()
- if root in [pathlib.Path('/'),pathlib.Path.home(),pathlib.Path.home()/'.local/share'] or SOURCE.is_relative_to(root) or root.is_relative_to(SOURCE):raise ValueError('Installation directory must be separate from source and user home roots')
+ if root in [pathlib.Path('/'),pathlib.Path.home(),pathlib.Path.home()/'.local/share'] or (not args.uninstall and (SOURCE.is_relative_to(root) or root.is_relative_to(SOURCE))):raise ValueError('Installation directory must be separate from source and user home roots')
  receipt_path=root/'installation.json';receipt=None
  if receipt_path.exists():
   receipt=json.loads(receipt_path.read_text())

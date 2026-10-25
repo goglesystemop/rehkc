@@ -35,7 +35,7 @@ class Distribution(unittest.TestCase):
     while not marker.exists() and time.monotonic()<end:time.sleep(.02)
     self.assertEqual(marker.read_text(),'launched')
    finally:launcher.write_bytes(first)
-  run(PACKAGE,*self.args,'--uninstall');self.assertFalse(launcher.exists());self.assertFalse(desktop.exists())
+  run(self.data/'current',*self.args,'--uninstall');self.assertFalse(launcher.exists());self.assertFalse(desktop.exists())
   self.assertEqual(sentinel.read_text(),'USER SESSION');self.assertEqual(credential.read_text(),'PRIVATE FIXTURE')
  def test_foreign_launcher_requires_explicit_backup_and_is_restored(self):
   self.binary.mkdir();old=self.binary/'rehkc';old.write_bytes(b'ORIGINAL LAUNCHER');old.chmod(0o700)
