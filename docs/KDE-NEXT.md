@@ -1,14 +1,46 @@
-# Sonraki aşama: KDE makinesinde doğrulama
+# KDE doğrulaması — 26 Ekim 2026
 
-Kullanıcı isteğiyle önce Cinnamon yayımlanacak. Bu sürüm KDE uyumlu diye etiketlenmez.
-KDE/Plasma makinesinde sürümü kurup şu gerçek koşullar kaydedilecek:
+Ubuntu 26.04.1 LTS x86_64, glibc 2.43, Plasma/KWin 6.6.6 ve Wayland üzerinde
+0.1.1 paketi gerçek pencereyle denendi. Aynı paketin XWayland/XCB açılışı ve
+%150 Qt ölçeğinde açılışı da geçti. Bu tek KDE makinesinin sonucudur; diğer
+dağıtımların, masaüstlerinin veya her ölçeklendirme durumunun doğrulaması değildir.
 
-- dağıtım, Plasma/Qt, X11 veya Wayland ve XWayland varlığı;
-- Qt platform/theme plugin bağımlılıkları, ölçeklendirme ve yazı tipi;
-- başlatıcı/ikon/app ID eşleşmesi ve dosya açma/drag-drop;
-- yerel modeller, tarayıcı OAuth dönüşü ve oturum dosya diyalogları;
-- global /bridge olmadan gerçek Ghidra liste/decompile ve MCP temizliği;
-- Radare2/RetDec durumu ve test hedefinde gerçek çıktıları.
+İlk KDE testinde bulunan kurulu `current/install.sh --check` hatası düzeltildi.
+Salt kontrol kurulu paketten çalışabilir; kendi kaynak dizinine tekrar kurma
+koruması devam eder. Dağıtım testi bu iki davranışı ve kurulum kaydının
+değişmediğini birlikte denetler. Altı dağıtım testi geçti.
 
-Cinnamon üzerinde başarılı sonuç, KDE testi yerine geçmez. Mevcut masaüstü
-ayarlarını değiştirmek veya KWin'i mevcut oturumun üzerine başlatmak planlanmaz.
+Masaüstü oturumunun PATH'i `~/.local/bin` içermediğinde kullanıcı araçlarının
+bulunabilmesi için bu dizin mevcut PATH'in sonuna eklenir. Açık ortam değişkenleri
+ve mevcut PATH önceliği korunur; iki ayrı keşif testi geçti.
+
+## Gerçek işlev testleri
+
+- 155 motor komutu ve üç sağlayıcı seçeneği yüklendi.
+- Başlık okuma/disassembly, Strings, ELF güvenlik özellikleri, hex görünümü,
+  arama, yer imi, Türkçe notlar, oturum kaydetme/açma, Markdown dışa aktarım
+  ve küçük ELF dosyalarının karşılaştırması geçti.
+- Radare2 6.2.4, RetDec 5.0 ve Ghidra 12.1.4/JDK 21 arayüzden çalıştı.
+  Bilinen `weighted_total` fonksiyonu gerçek decompiler çıktısında bulundu.
+- Global `/bridge` olmadan Ghidra fonksiyon/string listesi ve decompile MCP
+  üzerinden de çalıştı. MCP doctor 207 araç ve 6 istemi doğruladı; alt süreç
+  kapatılıp toplandı.
+- Motorlar kalıcı kullanıcı dizinlerine alındıktan sonra, ek test PATH'i veya
+  Ghidra/Java/RetDec ortam değişkeni olmadan GUI/MCP testleri tekrar geçti.
+  Menü PATH'i yalnız `/usr/bin:/bin` olduğunda da keşif ve pencere açılışı geçti.
+- Ollama'da gerçek Gemma4 12B ile model yükleme, akışlı sohbet, modelin seçili
+  dosyada objdump MCP aracını çağırması ve model boşaltma geçti.
+- REHKC'ye giriş yapılmış ChatGPT hesabında gerçek model kataloğu, sohbet ve
+  seçili test dosyasında objdump MCP araç kullanımı geçti. API anahtarı eklenmedi.
+- LM Studio yeniden açıldıktan sonra içe aktarılan Gemma4 12B kataloğa geldi.
+  REHKC arayüzünden 4096 token bağlamıyla yükleme, gerçek akışlı sohbet, modelin
+  objdump MCP aracını çağırması ve model boşaltma geçti. Sohbet yaklaşık 4,1
+  saniye, MCP yanıtı yaklaşık 8,6 saniye sürdü; model test sonunda boşaltıldı.
+
+Hedef dosyalar çalıştırılmadı. Gerçek sohbet testleri bağlantı ve araç akışı
+kanıtıdır; tüm model yanıtlarının doğruluğunu veya her analiz komutunu doğrulamaz.
+
+Üç sağlayıcının seçili modellerde sohbet/MCP testleri tamamlandı; tüm modellerin
+veya tüm analiz araçlarının doğrulandığı iddia edilmez. KDE portal dosya seçicisi, Dolphin'den elle
+sürükleme ve görev çubuğu gruplaması tam doğrulanmış sayılmaz. Testler için
+masaüstü ayarları değiştirilmedi veya mevcut oturum üzerine KWin başlatılmadı.
