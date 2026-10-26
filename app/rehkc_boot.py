@@ -13,12 +13,17 @@ import time
 
 APP = Path(__file__).resolve().parent
 ROOT = APP.parent
-VERSION = '0.1.2'
+VERSION = '0.2.0'
 sys.path.insert(0, str(APP))
 
 
 def tool_environment():
-    """Explicit environment wins; discover optional existing tools without installing them."""
+    """Explicit environment wins; load managed engines, then external fallbacks."""
+    import rehkc_tools
+    try:
+        rehkc_tools.apply_environment()
+    except (OSError, ValueError, KeyError) as exc:
+        print('Managed analysis tools: '+str(exc),file=sys.stderr)
     # A desktop session can predate ~/.local/bin, so its menu PATH may omit it.
     # Keep explicitly configured PATH entries first, then discover user tools.
     search_path = os.environ.get('PATH', '/usr/local/bin:/usr/bin:/bin').split(os.pathsep)
@@ -74,12 +79,17 @@ def main():
     parser=argparse.ArgumentParser(description='REHKC — REA Linux desktop')
     parser.add_argument('--version',action='store_true')
     parser.add_argument('--doctor',action='store_true',help='Runtime/dependency report; no software is installed')
+    parser.add_argument('--tools',choices=['install','status','check-updates','update','rollback'],help='Manage analysis engines and their dependencies')
+    parser.add_argument('--if-due',action='store_true',help='Skip update check until the next weekly check is due')
     parser.add_argument('--engine',nargs=argparse.REMAINDER,help='Run the bundled REA CLI/MCP')
     parser.add_argument('--smoke-test',action='store_true',help='Open a disposable, isolated GUI and verify startup')
     parser.add_argument('--report',type=Path)
     parser.add_argument('--screenshot',type=Path)
     parser.add_argument('target',nargs='?')
     args=parser.parse_args()
+    if args.tools:
+        import rehkc_tools
+        return rehkc_tools.main([args.tools]+(['--if-due'] if args.if_due else []))
     tool_environment()
     if args.version:print('REHKC '+VERSION+' / REA 6.7.0');return 0
     if args.engine is not None:
@@ -110,6 +120,9 @@ def main():
     window=gui.ReaMainWindow(target_file=args.target)
     window.setWindowTitle('REHKC — REA Desktop')
     window.show()
+    if not args.smoke_test:
+        from rehkc_tool_ui import install_tool_menu
+        install_tool_menu(application,window)
     if args.smoke_test:
         start=time.monotonic();finishing=False
         def check():

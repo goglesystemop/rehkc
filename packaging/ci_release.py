@@ -64,7 +64,10 @@ def main():
         run(sys.executable, 'packaging/build_release.py', '--engine', vendor_root/'app/rea.bin',
             '--assets', vendor_root/'app', '--stage', stage, '--output', output)
         run(sys.executable, 'tests/test_tool_environment.py')
+        run(stage/'runtime/python/bin/python3', ROOT/'tests/test_managed_tools.py')
+        run(stage/'runtime/python/bin/python3', ROOT/'tests/test_tool_ui.py')
         run(sys.executable, 'tests/test_distribution.py', '--package', stage)
+        run(sys.executable, 'tests/test_managed_engines_live.py', '--package', stage, '--report', work/'managed-engines.json')
         run(stage/'run', '--smoke-test', '--report', work/'smoke.json',
             env=dict(os.environ, QT_QPA_PLATFORM='offscreen'))
         run(stage/'run', '--engine', 'mcp', 'doctor', '--json')

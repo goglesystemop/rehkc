@@ -25,6 +25,8 @@ def main():
  for source in (ROOT/'app').iterdir():
   if source.is_file() and (source.suffix=='.py' or source.name in ('rea-engine','ai-icon.png')):shutil.copy2(source,app/source.name)
  shutil.copytree(ROOT/'app/bridge',app/'bridge',dirs_exist_ok=True)
+ shutil.copy2(ROOT/'app/analysis-tools.json',app/'analysis-tools.json')
+ shutil.copy2(ROOT/'packaging/requirements.lock',app/'python-requirements.lock')
  shutil.copy2(a.engine,app/'rea.bin');(app/'rea.bin').chmod(0o755)
  raw=a.engine.read_bytes();bundle=raw[spec['offset']:spec['offset']+spec['length']]
  if hashlib.sha256(bundle).hexdigest()!=spec['bundle_sha256']:raise SystemExit('Embedded motor bundle mismatch')

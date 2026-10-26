@@ -11,12 +11,12 @@ Bu tek KDE ortamının sonucudur; ARM ve her Linux dağıtımı doğrulanmış s
 ## Kurulum
 
 [Releases](https://github.com/goglesystemop/rehkc/releases) sayfasından
-`rehkc-0.1.2-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
+`rehkc-0.2.0-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
 
 ```sh
 sha256sum -c SHA256SUMS
-tar -xzf rehkc-0.1.2-linux-x86_64.tar.gz
-cd rehkc-0.1.2-linux-x86_64
+tar -xzf rehkc-0.2.0-linux-x86_64.tar.gz
+cd rehkc-0.2.0-linux-x86_64
 ./install.sh --check
 ./install.sh
 ```
@@ -56,8 +56,10 @@ oturum veya model dosyası istemez. Ayrıntılar: [Kurulum](docs/INSTALL.md).
 - Mevcut Radare2/RetDec adaptörleri, Strings/Security Audit, seçili kod eylemleri,
   analizde arama, notlar/yer imleri ve iki dosya karşılaştırması.
 
-Ghidra/Java/Radare2/RetDec ve model sunucuları isteğe bağlı harici araçlardır;
-kurucu bunları indirmez, yükseltmez veya yeniden kurmaz. [Entegrasyonlar](docs/INSTALL.md#analiz-araçları).
+Kurucu Ghidra, uyumlu JDK, Radare2 ve RetDec'i kullanıcıya özel kurar. Haftalık
+sürüm ve bağımlılık kontrolü yapar; doğrulanmış motor grupları menüden
+güncellenebilir. [Motor kurulumu ve güncellemeler](docs/ANALYSIS-TOOLS.md).
+Model sunucuları ve model dosyaları ayrıca kurulur.
 Küçük yerel modeller gerçek araç çıktısını yanlış yorumlayabilir; yorum ile
 Ghidra/MCP kanıtını aynı şey saymayın.
 

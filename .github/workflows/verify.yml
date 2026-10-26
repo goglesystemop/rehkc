@@ -1,0 +1,21 @@
+name: Verify installer and managed engines
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rehkc-verify-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install desktop and Java runtime system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libglib2.0-0t64 libgl1 libegl1 libxkbcommon-x11-0 libxcb-shape0 libxcb-xinerama0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxrender1 libxi6 libxrandr2 libxfixes3 libfontconfig1 libdbus-1-3 libx11-xcb1 libxext6 libxtst6 libstdc++6 zlib1g binutils xdg-utils
+      - name: Build and verify without publishing
+        run: python3 packaging/ci_release.py --work-dir "$RUNNER_TEMP/rehkc-verify" --build-only
