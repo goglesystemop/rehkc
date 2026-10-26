@@ -53,9 +53,53 @@ def bindings(args,root):
  if not args.no_desktop:result[str(desktop)]=(text.encode(),0o644)
  return result
 
-def system_dependencies():
- # Engine/JDK payloads are user-scoped; only shared OS libraries use apt.
- return ['sudo','apt-get','install','--no-install-recommends','libglib2.0-0','libgl1','libegl1','libxkbcommon-x11-0','libxcb-shape0','libxcb-xinerama0','libxcb-cursor0','libxcb-icccm4','libxcb-image0','libxcb-keysyms1','libxcb-render-util0','libxcb-xkb1','libxrender1','libxi6','libxrandr2','libxfixes3','libfontconfig1','libdbus-1-3','libx11-xcb1','libxext6','libxtst6','libstdc++6','zlib1g','binutils','xdg-utils']
+SYSTEM_PACKAGES={
+ 'apt-get':[
+  'libglib2.0-0','libgl1','libegl1','libxkbcommon-x11-0','libxcb-shape0',
+  'libxcb-xinerama0','libxcb-cursor0','libxcb-icccm4','libxcb-image0',
+  'libxcb-keysyms1','libxcb-render-util0','libxcb-xkb1','libxrender1','libxi6',
+  'libxrandr2','libxfixes3','libfontconfig1','libdbus-1-3','libx11-xcb1',
+  'libxext6','libxtst6','libstdc++6','zlib1g','binutils','xdg-utils'],
+ 'pacman':[
+  'glib2','libglvnd','mesa','libxkbcommon-x11','libxcb','xcb-util',
+  'xcb-util-cursor','xcb-util-wm','xcb-util-image','xcb-util-keysyms',
+  'xcb-util-renderutil','libxrender','libxi','libxrandr','libxfixes',
+  'fontconfig','dbus','libx11','libxext','libxtst','gcc-libs','zlib',
+  'wayland','ttf-dejavu','binutils','xdg-utils'],
+}
+
+def dependency_manager(release=None):
+ # Select by distribution identity, never by whichever manager happens to be
+ # installed first. Developer machines can have both apt and pacman on PATH.
+ if release is None:
+  try:release=platform.freedesktop_os_release()
+  except OSError as exc:raise ValueError('Cannot read os-release; automatic system dependencies support Debian and Arch families only.') from exc
+ identity=release.get('ID','').lower()
+ families={'apt-get':{'debian','ubuntu','kubuntu','linuxmint','neon'},
+           'pacman':{'arch','archlinux','cachyos','manjaro'}}
+ for manager,ids in families.items():
+  if identity in ids:return manager
+ like=set(release.get('ID_LIKE','').lower().split())
+ matches=[manager for manager,ids in families.items() if like & ids]
+ if len(matches)==1:return matches[0]
+ raise ValueError('Unsupported or ambiguous distribution: '+(identity or 'unknown')+'. Automatic system dependencies support Debian and Arch families only.')
+
+def system_dependencies(manager=None):
+ # Engine/JDK payloads stay user-scoped; these are shared OS libraries only.
+ manager=manager or dependency_manager()
+ if manager not in SYSTEM_PACKAGES:raise ValueError('Unsupported package manager: '+manager)
+ prefix=[] if os.geteuid()==0 else ['sudo']
+ options=['install','--no-install-recommends'] if manager=='apt-get' else ['-Syu','--needed']
+ return prefix+[manager]+options+SYSTEM_PACKAGES[manager]
+
+def install_system_dependencies():
+ manager=dependency_manager()
+ if not shutil.which(manager):raise ValueError('Detected '+manager+' distribution, but '+manager+' is not available.')
+ if os.geteuid()!=0 and not shutil.which('sudo'):raise ValueError('sudo is required to install system dependencies. Install it with your distribution package manager first.')
+ if manager=='pacman':print('Arch dependencies: pacman -Syu also upgrades the system to keep packages consistent; review and confirm the pacman transaction.',flush=True)
+ command=system_dependencies(manager)
+ print('System dependencies: '+shlex.join(command),flush=True)
+ subprocess.run(command,check=True)
 
 def uninstall(root,receipt):
  kept=[]
@@ -98,10 +142,11 @@ def main():
  p.add_argument('--without-tools',action='store_true',help='Application-only/offline install; skip managed analysis engines and JDK')
  p.add_argument('--print-system-deps',action='store_true');p.add_argument('--install-system-deps',action='store_true');p.add_argument('--replace-existing',action='store_true')
  args=p.parse_args()
+ if args.install_system_deps and (args.check or args.uninstall):raise ValueError('--install-system-deps cannot be combined with --check or --uninstall.')
  if args.print_system_deps:print(shlex.join(system_dependencies()));return 0
  if args.install_system_deps:
-  if not shutil.which('apt-get'):raise ValueError('This first release automates system dependencies only for Debian/Ubuntu/Mint. See docs/INSTALL.md.')
-  subprocess.run(system_dependencies(),check=True)
+  if os.geteuid()==0:raise ValueError('Run ./install.sh --install-system-deps as your desktop user, without sudo. The installer uses sudo only for system packages.')
+  install_system_dependencies()
  root=args.data_dir.expanduser().resolve();args.bin_dir=args.bin_dir.expanduser().absolute();args.desktop_dir=args.desktop_dir.expanduser().absolute()
  if root in [pathlib.Path('/'),pathlib.Path.home(),pathlib.Path.home()/'.local/share'] or (not (args.uninstall or args.check) and (SOURCE.is_relative_to(root) or root.is_relative_to(SOURCE))):raise ValueError('Installation directory must be separate from source and user home roots')
  receipt_path=root/'installation.json';receipt=None

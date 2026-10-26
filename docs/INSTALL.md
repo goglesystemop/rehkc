@@ -9,7 +9,7 @@ Sistem OpenGL/X11/font/D-Bus kitaplıkları ve çalışan bir masaüstü oturumu
 
 ## Kurucu davranışı
 
-- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.2.0`.
+- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.2.1`.
 - Sabit sürüm bağlantısı: aynı dizinde `current`.
 - Komut: `~/.local/bin/rehkc`; menü: kullanıcı uygulama dizininde
   `io.github.goglesystemop.rehkc.desktop`.
@@ -94,3 +94,20 @@ uygulama dosyaları da korunup raporlanır.
 Cinnamon/X11 ve belirtilen Ubuntu/Plasma ortamı test edilmiştir. ARM,
 Alpine/musl, çalıştırma izni olmayan diskler ve tüm Linux dağıtımları için
 uyumluluk iddiası yoktur. Ayrıntılı sınırlar docs/KDE-NEXT.md içindedir.
+
+## Debian ve Arch sistem bağımlılıkları
+
+0.2.1'den itibaren `./install.sh --install-system-deps`, `os-release` içindeki
+`ID` / `ID_LIKE` değerlerinden Debian/Ubuntu/Kubuntu/Mint ve Arch/CachyOS/Manjaro
+ailesini ayırt eder. Debian ailesinde apt-get, Arch ailesinde pacman kullanır;
+PATH'te her iki paket yöneticisinin olması seçimi değiştirmez.
+
+Arch komutu `sudo pacman -Syu --needed ...` olduğundan tam sistem güncellemesi
+de yapabilir. Pacman'ın onay istemi korunur; ürün kurucusu `--noconfirm`
+kullanmaz. Bilinmeyen/çelişkili dağıtım, eksik paket yöneticisi veya paket
+kurulumu hatası uygulama kurulumu başlamadan durdurulur. `--check` ile
+`--install-system-deps` birlikte kullanılamaz; `--check` salt okunur kalır.
+
+Temiz kurulum komutlarının iki aile için ayrı açıklaması [README](../README.md#kurulum)
+içindedir. Motorlar ve JDK, pacman/apt veritabanına eklenmez; kullanıcıya özel,
+resmî arşivlerden aynı kurucu ile kurulur. Bu kapsam Debian ve Arch aileleridir.

@@ -59,3 +59,13 @@ Motor kataloğunda yeni grup yayımlamak için monoton `revision` değeri artır
 resmî arşivlerin URL/boyut/SHA-256 değerleri, Java/Python sınırları ve REA'nın
 kabul ettiği Ghidra sürüm hattı birlikte değerlendirilir. `requires_review`
 güncelleme bildirimi kendi başına katalogya alma veya uyumluluk kanıtı değildir.
+
+## Arch bağımlılık ve motor kontrolü
+
+`verify.yml` ayrıca digest ile sabitlenmiş resmî Arch Linux kapsayıcısında
+kurucunun gerçek `pacman -Syu --needed` işlemini çalıştırır. Sonra ayrı, yetkisiz
+kullanıcıyla tam build-only akışı, dağıtım testleri, motorlu temiz kurulum,
+Radare2/RetDec/Ghidra/REA probları ve offscreen GUI açılışı sınanır.
+`test_system_dependencies.py`, os-release seçimi, komutlar ve hata durumlarını
+host paket yöneticisini çalıştırmadan denetler. CachyOS/Manjaro ID/ID_LIKE
+seçimi bu testlerle kapsanır; kapsayıcı testi gerçek masaüstü testi değildir.
