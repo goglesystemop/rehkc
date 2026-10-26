@@ -54,8 +54,8 @@ def bindings(args,root):
  return result
 
 def system_dependencies():
- # Optional analysis engines are deliberately not installed by this command.
- return ['sudo','apt-get','install','--no-install-recommends','libglib2.0-0','libgl1','libegl1','libxkbcommon-x11-0','libxcb-shape0','libxcb-xinerama0','libxcb-cursor0','libxcb-icccm4','libxcb-image0','libxcb-keysyms1','libxcb-render-util0','libxcb-xkb1','libxrender1','libxi6','libxrandr2','libxfixes3','libfontconfig1','libdbus-1-3','libx11-xcb1','binutils','xdg-utils']
+ # Engine/JDK payloads are user-scoped; only shared OS libraries use apt.
+ return ['sudo','apt-get','install','--no-install-recommends','libglib2.0-0','libgl1','libegl1','libxkbcommon-x11-0','libxcb-shape0','libxcb-xinerama0','libxcb-cursor0','libxcb-icccm4','libxcb-image0','libxcb-keysyms1','libxcb-render-util0','libxcb-xkb1','libxrender1','libxi6','libxrandr2','libxfixes3','libfontconfig1','libdbus-1-3','libx11-xcb1','libxext6','libxtst6','libstdc++6','zlib1g','binutils','xdg-utils']
 
 def uninstall(root,receipt):
  kept=[]
@@ -95,6 +95,7 @@ def main():
  p.add_argument('--bin-dir',type=pathlib.Path,default=pathlib.Path.home()/'.local/bin')
  p.add_argument('--desktop-dir',type=pathlib.Path,default=pathlib.Path(os.environ.get('XDG_DATA_HOME',pathlib.Path.home()/'.local/share'))/'applications')
  p.add_argument('--no-desktop',action='store_true');p.add_argument('--check',action='store_true');p.add_argument('--uninstall',action='store_true')
+ p.add_argument('--without-tools',action='store_true',help='Application-only/offline install; skip managed analysis engines and JDK')
  p.add_argument('--print-system-deps',action='store_true');p.add_argument('--install-system-deps',action='store_true');p.add_argument('--replace-existing',action='store_true')
  args=p.parse_args()
  if args.print_system_deps:print(shlex.join(system_dependencies()));return 0
@@ -146,6 +147,10 @@ def main():
     if stage.exists():shutil.rmtree(stage)
   current=root/'current'
   if current.exists() and not current.is_symlink():raise ValueError('Foreign current directory retained')
+  if not args.without_tools:
+   sys.path.insert(0,str(SOURCE/'app'))
+   import rehkc_tools
+   rehkc_tools.install(root=root/'tools',python=destination/'runtime/python/bin/python3')
   current_link='releases/'+version;temp=root/('.current-'+uuid.uuid4().hex);temp.symlink_to(current_link);os.replace(temp,current)
   for name,(content,mode) in new_bindings.items():write_atomic(pathlib.Path(name),content,mode)
   releases=receipt.get('releases',{}).copy() if receipt else {};releases[version]=sha(destination/'MANIFEST.json')

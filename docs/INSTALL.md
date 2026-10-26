@@ -9,7 +9,7 @@ Sistem OpenGL/X11/font/D-Bus kitaplıkları ve çalışan bir masaüstü oturumu
 
 ## Kurucu davranışı
 
-- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.1.2`.
+- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.2.0`.
 - Sabit sürüm bağlantısı: aynı dizinde `current`.
 - Komut: `~/.local/bin/rehkc`; menü: kullanıcı uygulama dizininde
   `io.github.goglesystemop.rehkc.desktop`.
@@ -21,10 +21,15 @@ Sistem OpenGL/X11/font/D-Bus kitaplıkları ve çalışan bir masaüstü oturumu
 - Mevcut farklı başlatıcıyı değiştirmek açık `--replace-existing` gerektirir;
   önceki içerik özel izinli kurulum kaydında geri dönüş için tutulur.
 
-Arşivden kurulum ağ gerektirmez. İlk kaynak depo kurulumunda arşiv GitHub'dan
+Arşivden yalnız uygulama kurulumu (`--without-tools`) ağ gerektirmez. Varsayılan kurulum analiz motorları ve JDK için resmî kaynaklara bağlanır. İlk kaynak depo kurulumunda arşiv GitHub'dan
 indirilir; ağ ve sistem Python'unun güncel tarfile güvenli açma desteği gerekir.
 
 ## Analiz araçları
+
+Kurucu varsayılan olarak Ghidra, RetDec, Radare2 ve uyumlu JDK kurar. Haftalık
+güncelleme kontrolü, sürüm/bağımlılık politikası ve geri dönüş için
+[Yönetilen analiz motorları](ANALYSIS-TOOLS.md) belgesini okuyun.
+
 
 Sunucular varsayılan olarak LM Studio `127.0.0.1:1234`, Ollama `127.0.0.1:11434`.
 Başka port veya anahtar kullanılıyorsa Rea ayarlarından mevcut sunucuyu seçin.
@@ -33,7 +38,8 @@ Yerel sunucular ve model dosyaları bu pakete dahil değildir.
 Ghidra kurulumunuzda `support/analyzeHeadless` bulunmalı. Önceden ayarlı
 `GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `RETDEC_INSTALL_DIR` değerleri korunur.
 Yoksa PATH, `~/.local/opt/`, `/opt/` ve standart Ghidra konumları taranır. Ghidra
-12.1.4 ve tam 64-bit JDK 21 doğrulanmış mevcut entegrasyondur; başka sürümün
+12.1.4/JDK 21 önceki sürümde doğrulanmıştır. Yeni yönetilen grup Ghidra 12.1.4
+ve JDK 21 kullanır; başka sürümün
 uygunluğunu gerçek doctor raporu belirler. Paketli köprü, bu paketin kendi
 `app/bridge/ghidra` dizininden kullanılır; `/bridge` yazma veya sudo gerekmez.
 
@@ -47,7 +53,7 @@ ekleyerek keşif yapar; mevcut PATH ve açık JAVA_HOME/GHIDRA_INSTALL_DIR/
 RETDEC_INSTALL_DIR tercihleri önceliğini korur. Ghidra ve RetDec için
 `~/.local/opt/ghidra*` ve `~/.local/opt/retdec*` dizinleri de taranır. JDK'nın
 `javac` komutuna verilen bir sembolik bağlantı gerçek JDK konumuna çözülür.
-Bu keşif, eksik araçları kendiliğinden indirmez veya kurmaz.
+Harici araç keşfi indirme yapmaz. Kurucu artık varsayılan olarak yönetilen motor grubunu ayrıca kurar; ayrıntılar aşağıdadır.
 
 ## ChatGPT planı
 

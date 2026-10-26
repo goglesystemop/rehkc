@@ -11,7 +11,13 @@ OpenAI, MakuluLinux, Cinnamon or upstream REA release.
   `packaging/doctor-runtime-spec.json` and the pinned companion repository.
 - The Ghidra bridge has a small compatibility modification in listProcedures:
   omit the extra symbol field from the strict procedure inventory. Ghidra itself
-  is not redistributed. It remains an optional, user-provided installation.
+  is downloaded from its official release by the installer, together with the
+  catalog-pinned Temurin JDK, Radare2 and RetDec archives. Their original license
+  and third-party notices remain in the extracted upstream packages; the engine
+  archives are not embedded in the REHKC release. Catalog origins and hashes
+  are in `app/analysis-tools.json`. Ghidra: Apache-2.0; Radare2: LGPL-3.0;
+  RetDec: MIT with third-party components; Temurin OpenJDK: GPLv2 with
+  Classpath Exception and bundled third-party notices.
 - PyQt5 is used under GPLv3. This distribution includes the editable desktop
   source under GPLv3; upstream MIT notices are retained. The runtime includes
   wheel license/metadata files. PyQt5 5.15.11 source:

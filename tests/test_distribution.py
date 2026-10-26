@@ -2,7 +2,7 @@
 import argparse,hashlib,json,os,pathlib,shutil,subprocess,tempfile,unittest,time,shlex
 P=argparse.ArgumentParser();P.add_argument('--package',required=True,type=pathlib.Path);ARGS,LEFT=P.parse_known_args();PACKAGE=ARGS.package.resolve()
 def run(root,*args,ok=True):
- p=subprocess.run(['/bin/sh',str(root/'install.sh'),*map(str,args)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=120)
+ p=subprocess.run(['/bin/sh',str(root/'install.sh'),'--without-tools',*map(str,args)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=120)
  if ok and p.returncode:raise AssertionError(p.stdout)
  return p
 class Distribution(unittest.TestCase):

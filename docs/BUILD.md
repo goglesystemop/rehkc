@@ -7,7 +7,7 @@ REA 6.7.0 vendor motoru. Çalışan motor veya ajan skill'leri değiştirilmez.
 ```sh
 python3 packaging/build_release.py \
   --engine /path/to/verified/rea.bin \
-  --stage /tmp/rehkc-build/rehkc-0.1.2-linux-x86_64 \
+  --stage /tmp/rehkc-build/rehkc-0.2.0-linux-x86_64 \
   --output dist
 ```
 
@@ -43,3 +43,19 @@ yayımsız ön kontrol için:
 ```sh
 python3 packaging/ci_release.py --work-dir /tmp/rehkc-release-check --build-only
 ```
+
+## Yönetilen motor kabul testi
+
+`verify.yml` pull request üzerinde salt okuma izniyle aynı derleme ve test akışını
+`--build-only` olarak çalıştırır; sürüm yayımlamaz. `test_managed_tools.py` hata,
+önbellek, sürüm/bağımlılık sınırları ve geri dönüş politikasını sınar.
+`test_managed_engines_live.py` ise ağdan hash kontrollü motor kurulumu yapar;
+boş hedefte kurucunun varsayılan akışını, kısıtlı PATH ile normal başlatıcıyı,
+gerçek Ghidra/REA decompile akışını ve tekrar kurulumu doğrular. Kurucunun kendi
+probu da üç motorla gerçek analiz ve paketli REA/Ghidra köprüsünü çalıştırır.
+Analiz edilen küçük test ELF'i oluşturulur, hiçbir zaman hedef olarak çalıştırılmaz.
+
+Motor kataloğunda yeni grup yayımlamak için monoton `revision` değeri artırılır;
+resmî arşivlerin URL/boyut/SHA-256 değerleri, Java/Python sınırları ve REA'nın
+kabul ettiği Ghidra sürüm hattı birlikte değerlendirilir. `requires_review`
+güncelleme bildirimi kendi başına katalogya alma veya uyumluluk kanıtı değildir.

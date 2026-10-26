@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "platform": "linux-x86_64",
+  "glibc_minimum": "2.34",
+  "python_minimum": "3.12",
+  "python_maximum_exclusive": "3.13",
+  "tools": {
+    "jdk": {
+      "repo": "adoptium/temurin21-binaries",
+      "tag": "jdk-21.0.13+9",
+      "version": "21.0.13+9",
+      "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_x64_linux_hotspot_21.0.13_9.tar.gz",
+      "sha256": "d7f5d5cf865a2902b70ff549b97586a7d3f234e016f041ab447ea740c7d66d1c",
+      "bytes": 207858352,
+      "format": "tar",
+      "root": "jdk-21.0.13+9"
+    },
+    "ghidra": {
+      "repo": "NationalSecurityAgency/ghidra",
+      "tag": "Ghidra_12.1.4_build",
+      "version": "12.1.4",
+      "url": "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip",
+      "sha256": "ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db",
+      "bytes": 569649598,
+      "format": "zip",
+      "root": "ghidra_12.1.4_PUBLIC"
+    },
+    "radare2": {
+      "repo": "radareorg/radare2",
+      "tag": "6.2.4",
+      "version": "6.2.4",
+      "url": "https://github.com/radareorg/radare2/releases/download/6.2.4/radare2_6.2.4_amd64.deb",
+      "sha256": "7019eedc0e0e87d1f53d6b8f5fc62b898567679c5efdce7fbfc557c9e7655e90",
+      "bytes": 8648924,
+      "format": "deb",
+      "root": "usr"
+    },
+    "retdec": {
+      "repo": "avast/retdec",
+      "tag": "v5.0",
+      "version": "5.0",
+      "url": "https://github.com/avast/retdec/releases/download/v5.0/RetDec-v5.0-Linux-Release.tar.xz",
+      "sha256": "e5a7dd82987ff52b8c714892277d0b1d0190ab778c03036d01eb69c7658ab1a5",
+      "bytes": 189259788,
+      "format": "tar",
+      "root": ""
+    }
+  },
+  "compatibility": {
+    "ghidra_java_minimum": 21,
+    "ghidra_java_maximum_exclusive": 22,
+    "ghidra_python_minimum": "3.9",
+    "ghidra_python_maximum_exclusive": "3.15",
+    "ghidra_python_usage": "Optional PyGhidra/debugger; REHKC bridge uses Java scripts.",
+    "retdec_python_usage": "Main retdec-decompiler is native; optional helper scripts use bundled Python3.12.",
+    "sources": [
+      "https://github.com/NationalSecurityAgency/ghidra/blob/Ghidra_12.1.4_build/GhidraDocs/GettingStarted.md",
+      "https://github.com/avast/retdec/tree/v5.0",
+      "https://github.com/radareorg/radare2/releases/tag/6.2.4"
+    ],
+    "rea_ghidra_line": "12.1"
+  },
+  "revision": 2026102701
+}
