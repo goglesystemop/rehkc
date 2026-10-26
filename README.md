@@ -3,12 +3,71 @@
 Cinnamon üzerinde geliştirilmiş bağımsız REA masaüstü dağıtımı. Makulu üzerinde birlikte
 geliştirilen arayüzü, kullanıcı adına bağlı kurulum yollarından ayırır.
 
-**Paket hedefi:** Linux x86_64, glibc 2.28 veya üzeri. Cinnamon/X11 yanında
+**Paket hedefi:** Linux x86_64; uygulama için glibc >= 2.28, otomatik motor
+kurulumu için glibc >= 2.34. Cinnamon/X11 yanında
 Ubuntu 26.04.1 / Plasma 6.6.6 Wayland ve XWayland üzerinde de test edildi.
 Bu tek KDE ortamının sonucudur; ARM ve her Linux dağıtımı doğrulanmış sayılmaz.
 [KDE test kapsamı](docs/KDE-NEXT.md).
 
 ## Kurulum
+
+### Debian / Ubuntu / Kubuntu / Linux Mint: GitHub’dan temiz kurulum
+
+64-bit x86_64 Linux ve internet bağlantısı gerekir. Motorlu kurulum glibc >= 2.34
+ister. İlk kurulum yaklaşık 1,2 GB uygulama/motor/JDK arşivi indirir; açma ve
+kurulum işlemleri için rahat pay bırakmak üzere 8 GB boş alan ayırın.
+
+**1. Git, Python ve sertifikaları kurun:**
+
+```sh
+sudo apt update
+sudo apt install -y git python3 ca-certificates
+```
+
+**2. Depoyu indirin ve kurucuyu çalıştırın:**
+
+```sh
+git clone https://github.com/goglesystemop/rehkc.git
+cd rehkc
+./install.sh --install-system-deps
+```
+
+Kurucuyu `sudo ./install.sh` şeklinde çalıştırmayın. Gereken sistem kitaplıkları
+ve binutils için kurucu kendisi sudo parolası ister. Uygulama ve motorlar
+kullanıcınıza özel kurulur; Ghidra, uyumlu tam Java JDK, RetDec ve Radare2 otomatik
+indirilir, hash ve gerçek analiz kontrollerinden sonra etkinleştirilir.
+Sistemdeki Python/pip ortamı değiştirilmez.
+
+Kaynak kurucu, yayımlanan sürüm arşivini GitHub’dan SHA-256 doğrulayarak kullanır.
+Sistem Python’unun güncel `tarfile` güvenli açma desteği gerekir; eski bir
+Python’da bu destek yoksa aşağıdaki sürüm arşivi yöntemi kullanılabilir.
+
+**3. Sürümü ve motorları kontrol edin, ardından uygulamayı açın:**
+
+```sh
+~/.local/bin/rehkc --version
+~/.local/bin/rehkc --tools status
+~/.local/bin/rehkc
+```
+
+0.2.0 sürümü için ilk komut `REHKC 0.2.0 / REA 6.7.0` yazmalı;
+motor durumunda `"managed": true` ve sağlık bölümünde `"ok": true` görünmelidir.
+Sonraki açılışlarda uygulama menüsündeki **REHKC** simgesini kullanabilirsiniz.
+Haftalık güncelleme kontrolü uygulama açıkken otomatik yapılır; elle kontrol için:
+
+```sh
+~/.local/bin/rehkc --tools check-updates
+```
+
+LM Studio/Ollama ve model dosyaları ayrıca kurulur. Ayrıntılar:
+[Kurulum](docs/INSTALL.md), [Motor kurulumu ve güncellemeler](docs/ANALYSIS-TOOLS.md).
+
+**Arch / CachyOS / Manjaro:** Yukarıdaki `apt` komutları bu dağıtımlar için
+değildir. 0.2.0’daki `--install-system-deps` yalnız `apt-get` destekler;
+`pacman` ile otomatik sistem bağımlılığı kurulumu henüz yoktur. Bu dağıtımlarda
+REHKC’nin çalışması henüz gerçek kurulum testiyle doğrulanmadı.
+
+### Sürüm arşivinden kurulum
 
 [Releases](https://github.com/goglesystemop/rehkc/releases) sayfasından
 `rehkc-0.2.0-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
@@ -32,17 +91,6 @@ Sistem kitaplığı eksikse:
 # Debian/Ubuntu/Mint'te yalnız listelenen gerekli kitaplıkları kurmak için:
 ./install.sh --install-system-deps
 ```
-
-Kaynak depodan aynı sürümü kurmak için:
-
-```sh
-git clone https://github.com/goglesystemop/rehkc.git
-cd rehkc
-./install.sh
-```
-
-Kaynak kurucu, bu deponun sürüm arşivini SHA-256 ile doğrulayıp kullanır; anahtar,
-oturum veya model dosyası istemez. Ayrıntılar: [Kurulum](docs/INSTALL.md).
 
 ## Özellikler
 
