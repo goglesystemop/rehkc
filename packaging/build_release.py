@@ -9,7 +9,7 @@ def digest(path):
  return h.hexdigest()
 def main():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--engine',required=True,type=pathlib.Path);p.add_argument('--stage',required=True,type=pathlib.Path);p.add_argument('--output',required=True,type=pathlib.Path);p.add_argument('--runtime-archive',type=pathlib.Path);p.add_argument('--assets',type=pathlib.Path)
- a=p.parse_args();spec=json.loads((ROOT/'packaging/doctor-runtime-spec.json').read_text());meta=json.loads((ROOT/'packaging/python-runtime.json').read_text())
+ a=p.parse_args();release=json.loads((ROOT/'packaging/version.json').read_text());version=release['version'];package_name='rehkc-'+version+'-linux-x86_64';spec=json.loads((ROOT/'packaging/doctor-runtime-spec.json').read_text());meta=json.loads((ROOT/'packaging/python-runtime.json').read_text())
  if digest(a.engine)!=spec['binary_sha256']:raise SystemExit('Unexpected REA motor; existing motor was not replaced.')
  a.stage.mkdir(parents=True,exist_ok=True);a.output.mkdir(parents=True,exist_ok=True)
  archive=a.runtime_archive or a.output/meta['name']
@@ -41,7 +41,7 @@ def main():
  for name in ['run','install.sh','installer.py','README.md','LICENSE','THIRD_PARTY_NOTICES.md']:
   shutil.copy2(ROOT/name,a.stage/name)
  shutil.copytree(ROOT/'docs',a.stage/'docs',dirs_exist_ok=True);shutil.copytree(ROOT/'licenses',a.stage/'licenses',dirs_exist_ok=True)
- (a.stage/'build-info.json').write_text(json.dumps({'application':'rehkc','version':'0.1.1','platform':'linux-x86_64','glibc_minimum':'2.28','desktop_verified_scope':'Cinnamon X11','engine_sha256':spec['binary_sha256'],'engine_version':'6.7.0','python_runtime':meta,'requirements_lock_sha256':digest(ROOT/'packaging/requirements.lock')},indent=2))
+ (a.stage/'build-info.json').write_text(json.dumps({'application':'rehkc','version':version,'platform':'linux-x86_64','glibc_minimum':'2.28','desktop_verified_scope':release['desktop_verified_scope'],'engine_sha256':spec['binary_sha256'],'engine_version':'6.7.0','python_runtime':meta,'requirements_lock_sha256':digest(ROOT/'packaging/requirements.lock')},indent=2))
  entries={}
  for f in sorted(a.stage.rglob('*')):
   rel=f.relative_to(a.stage).as_posix()
@@ -51,12 +51,12 @@ def main():
    if not f.resolve().is_relative_to(a.stage.resolve()):raise SystemExit('Escaping runtime symlink: '+rel)
    entries[rel]={'link':os.readlink(f)}
   elif f.is_file():entries[rel]={'sha256':digest(f),'mode':f.stat().st_mode&0o777}
- (a.stage/'MANIFEST.json').write_text(json.dumps({'application':'rehkc','version':'0.1.1','files':entries},sort_keys=True,indent=2))
- target=a.output/'rehkc-0.1.1-cinnamon-x86_64.tar.gz'
+ (a.stage/'MANIFEST.json').write_text(json.dumps({'application':'rehkc','version':version,'files':entries},sort_keys=True,indent=2))
+ target=a.output/(package_name+'.tar.gz')
  with tarfile.open(target,'w:gz',compresslevel=6) as t:
   for f in sorted(a.stage.rglob('*')):
-   if '__pycache__' not in f.parts:t.add(f,arcname='rehkc-0.1.1-cinnamon-x86_64/'+f.relative_to(a.stage).as_posix(),recursive=False)
+   if '__pycache__' not in f.parts:t.add(f,arcname=package_name+'/' +f.relative_to(a.stage).as_posix(),recursive=False)
  sha=digest(target);(a.output/'SHA256SUMS').write_text(sha+'  '+target.name+'\n')
- (ROOT/'packaging/release.json').write_text(json.dumps({'version':'0.1.1','asset':target.name,'url':'https://github.com/goglesystemop/rehkc/releases/download/v0.1.1/'+target.name,'sha256':sha},indent=2)+'\n')
+ (ROOT/'packaging/release.json').write_text(json.dumps({'version':version,'asset':target.name,'url':'https://github.com/goglesystemop/rehkc/releases/download/v'+version+'/'+target.name,'sha256':sha},indent=2)+'\n')
  print(json.dumps({'archive':str(target),'bytes':target.stat().st_size,'sha256':sha,'files':len(entries)},indent=2))
 if __name__=='__main__':main()

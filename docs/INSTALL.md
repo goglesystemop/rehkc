@@ -1,13 +1,15 @@
-# Cinnamon kurulumu
+# Linux masaüstü kurulumu
 
-Bu sürümün hedefi x86_64 Linux/Cinnamon/X11 ve glibc >= 2.28'dir. Paket CPython
+Bu sürümün hedefi x86_64 Linux ve glibc >= 2.28'dir. Cinnamon/X11 ve
+Ubuntu 26.04.1/Plasma 6.6.6 Wayland/XWayland test kapsamı docs/KDE-NEXT.md
+içinde açıklanır. Paket CPython
 3.12 ve Qt5/PyQt5 içerir; kullanıcının Python ortamına pip kurulumu yapılmaz.
-Sistem OpenGL/X11/font/D-Bus kitaplıkları ve çalışan bir Cinnamon oturumu gerekir.
+Sistem OpenGL/X11/font/D-Bus kitaplıkları ve çalışan bir masaüstü oturumu gerekir.
 `run --doctor`, eksik XCB kitaplıklarını ve bulunan isteğe bağlı araçları raporlar.
 
 ## Kurucu davranışı
 
-- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.1.1`.
+- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.1.2`.
 - Sabit sürüm bağlantısı: aynı dizinde `current`.
 - Komut: `~/.local/bin/rehkc`; menü: kullanıcı uygulama dizininde
   `io.github.goglesystemop.rehkc.desktop`.
@@ -83,6 +85,6 @@ uygulama dosyaları da korunup raporlanır.
 
 ## Kapsam
 
-Cinnamon X11 bu ilk sürümün test hedefidir. Wayland/KDE, ARM, Alpine/musl ve
-çalıştırma izni olmayan diskler için uyumluluk iddiası yoktur. KDE için sonraki
-makinede yapılacak işler docs/KDE-NEXT.md içindedir.
+Cinnamon/X11 ve belirtilen Ubuntu/Plasma ortamı test edilmiştir. ARM,
+Alpine/musl, çalıştırma izni olmayan diskler ve tüm Linux dağıtımları için
+uyumluluk iddiası yoktur. Ayrıntılı sınırlar docs/KDE-NEXT.md içindedir.

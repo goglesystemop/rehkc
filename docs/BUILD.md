@@ -7,7 +7,7 @@ REA 6.7.0 vendor motoru. Çalışan motor veya ajan skill'leri değiştirilmez.
 ```sh
 python3 packaging/build_release.py \
   --engine /path/to/verified/rea.bin \
-  --stage /tmp/rehkc-build/rehkc-0.1.1-cinnamon-x86_64 \
+  --stage /tmp/rehkc-build/rehkc-0.1.2-linux-x86_64 \
   --output dist
 ```
 
@@ -21,3 +21,25 @@ vendor build'i ürettiğini iddia etmez; tedarik edilen motor bir girdidir.
 arşiv için SHA256SUMS içerir. GUI kaynakları arşivde düzenlenebilir durumdadır.
 Yayımdan önce tests/ dağıtım kontrolleri ve gerçek Cinnamon/Ghidra/model testleri
 çalıştırılmalı; test raporu kapsamadığı platformu başarılı saymamalıdır.
+
+## GitHub Actions yayını
+
+`packaging/version.json` paket sürümünü ve doğrulanmış masaüstü kapsamını tutar.
+Yeni sürüm için bu dosya ile `app/rehkc_boot.py` içindeki sürüm birlikte artırılır;
+`docs/RELEASE-<sürüm>.md` sürüm notları hazırlanır. Ana daldaki sürüm dosyası
+değişikliği `.github/workflows/release.yml` işini başlatır.
+
+İş, mevcut `packaging/release.json` ile hash'i sabitlenmiş önceki yayımdan vendor
+motorunu alır; Python ve wheel girdilerini ayrıca sabitlenmiş hash'lerle doğrular.
+Yeni paketi derler, dağıtım/araç keşfi testlerini, offscreen GUI başlangıcını ve
+MCP doctor kontrolünü çalıştırır. Offscreen CI testi gerçek masaüstü testi yerine
+geçmez. Başarıdan sonra yeni arşivin hash'ini ana dala kaydeder, arşiv ve
+SHA256SUMS eklerini taslak sürüme yükler ve sürümü yayımlar. İş yalnız depo
+içeriği yazma izni kullanır; kişisel anahtar veya model gerektirmez.
+
+Aynı sürüm yeniden yayımlanmaz veya mevcut eklerin üzerine yazılmaz. Yerel,
+yayımsız ön kontrol için:
+
+```sh
+python3 packaging/ci_release.py --work-dir /tmp/rehkc-release-check --build-only
+```

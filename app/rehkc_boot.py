@@ -13,7 +13,7 @@ import time
 
 APP = Path(__file__).resolve().parent
 ROOT = APP.parent
-VERSION = '0.1.1'
+VERSION = '0.1.2'
 sys.path.insert(0, str(APP))
 
 
@@ -71,7 +71,7 @@ def dependencies():
 
 
 def main():
-    parser=argparse.ArgumentParser(description='REHKC — REA Cinnamon desktop')
+    parser=argparse.ArgumentParser(description='REHKC — REA Linux desktop')
     parser.add_argument('--version',action='store_true')
     parser.add_argument('--doctor',action='store_true',help='Runtime/dependency report; no software is installed')
     parser.add_argument('--engine',nargs=argparse.REMAINDER,help='Run the bundled REA CLI/MCP')
@@ -108,7 +108,7 @@ def main():
     application.setOrganizationName('REHKC')
     application.setDesktopFileName('io.github.goglesystemop.rehkc')
     window=gui.ReaMainWindow(target_file=args.target)
-    window.setWindowTitle('REHKC — REA Cinnamon')
+    window.setWindowTitle('REHKC — REA Desktop')
     window.show()
     if args.smoke_test:
         start=time.monotonic();finishing=False

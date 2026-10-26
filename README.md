@@ -1,21 +1,22 @@
-# REHKC — REA Cinnamon Desktop
+# REHKC — REA Linux Desktop
 
-Cinnamon için hazırlanmış bağımsız REA masaüstü dağıtımı. Makulu üzerinde birlikte
+Cinnamon üzerinde geliştirilmiş bağımsız REA masaüstü dağıtımı. Makulu üzerinde birlikte
 geliştirilen arayüzü, kullanıcı adına bağlı kurulum yollarından ayırır.
 
-**İlk sürümün kapsamı:** Linux x86_64, glibc 2.28 veya üzeri, Cinnamon/X11.
-KDE/Plasma ve ARM bu sürümde doğrulanmış sayılmaz; KDE çalışması ayrı bir makinede
-sonraki aşamada yapılacak.
+**Paket hedefi:** Linux x86_64, glibc 2.28 veya üzeri. Cinnamon/X11 yanında
+Ubuntu 26.04.1 / Plasma 6.6.6 Wayland ve XWayland üzerinde de test edildi.
+Bu tek KDE ortamının sonucudur; ARM ve her Linux dağıtımı doğrulanmış sayılmaz.
+[KDE test kapsamı](docs/KDE-NEXT.md).
 
 ## Kurulum
 
 [Releases](https://github.com/goglesystemop/rehkc/releases) sayfasından
-`rehkc-0.1.1-cinnamon-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
+`rehkc-0.1.2-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
 
 ```sh
 sha256sum -c SHA256SUMS
-tar -xzf rehkc-0.1.1-cinnamon-x86_64.tar.gz
-cd rehkc-0.1.1-cinnamon-x86_64
+tar -xzf rehkc-0.1.2-linux-x86_64.tar.gz
+cd rehkc-0.1.2-linux-x86_64
 ./install.sh --check
 ./install.sh
 ```

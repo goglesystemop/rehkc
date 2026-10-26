@@ -28,7 +28,7 @@ def main():
   finally:
    if temporary.exists():temporary.unlink()
  if sha(archive)!=meta['sha256']:raise ValueError('Release checksum mismatch; nothing installed')
- destination=cache/meta['sha256'];package=destination/'rehkc-0.1.1-cinnamon-x86_64'
+ destination=cache/meta['sha256'];package=destination/meta['asset'].removesuffix('.tar.gz')
  if not package.exists():
   if not hasattr(tarfile,'data_filter'):raise ValueError('This source bootstrap needs an updated Python tarfile data filter. Download the release archive and follow docs/INSTALL.md instead.')
   with tempfile.TemporaryDirectory(prefix='unpack-',dir=cache) as temporary:
