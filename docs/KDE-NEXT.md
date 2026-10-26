@@ -32,11 +32,15 @@ ve mevcut PATH önceliği korunur; iki ayrı keşif testi geçti.
   dosyada objdump MCP aracını çağırması ve model boşaltma geçti.
 - REHKC'ye giriş yapılmış ChatGPT hesabında gerçek model kataloğu, sohbet ve
   seçili test dosyasında objdump MCP araç kullanımı geçti. API anahtarı eklenmedi.
+- LM Studio yeniden açıldıktan sonra içe aktarılan Gemma4 12B kataloğa geldi.
+  REHKC arayüzünden 4096 token bağlamıyla yükleme, gerçek akışlı sohbet, modelin
+  objdump MCP aracını çağırması ve model boşaltma geçti. Sohbet yaklaşık 4,1
+  saniye, MCP yanıtı yaklaşık 8,6 saniye sürdü; model test sonunda boşaltıldı.
 
 Hedef dosyalar çalıştırılmadı. Gerçek sohbet testleri bağlantı ve araç akışı
 kanıtıdır; tüm model yanıtlarının doğruluğunu veya her analiz komutunu doğrulamaz.
 
-LM Studio'nun Gemma modelini içe aldıktan sonraki katalog yenilemesi ve gerçek
-sohbeti ayrıca tamamlanmalıdır. KDE portal dosya seçicisi, Dolphin'den elle
+Üç sağlayıcının seçili modellerde sohbet/MCP testleri tamamlandı; tüm modellerin
+veya tüm analiz araçlarının doğrulandığı iddia edilmez. KDE portal dosya seçicisi, Dolphin'den elle
 sürükleme ve görev çubuğu gruplaması tam doğrulanmış sayılmaz. Testler için
 masaüstü ayarları değiştirilmedi veya mevcut oturum üzerine KWin başlatılmadı.
