@@ -11,7 +11,7 @@ import time
 import uuid
 from urllib.parse import urlsplit
 from PyQt5.QtCore import QThread, pyqtSignal
-from rea_analysis import NativeTimeout
+from rea_analysis import NativeTimeout, digest_file
 from rea_mcp import (McpClient, McpCancelled, McpTimeout, SelectedTargetTools, SCHEMAS,
                      target_signature, DEFAULT_ANALYSIS_TIMEOUT, DEFAULT_TOOL_TIMEOUT)
 
@@ -78,16 +78,18 @@ class McpCopilotWorker(QThread):
     model_received = pyqtSignal(str)
     metrics_received = pyqtSignal(dict)
     tool_event = pyqtSignal(dict)
+    analysis_progress = pyqtSignal(dict)
     run_recorded = pyqtSignal(dict)
 
     def __init__(self, server_base, api_key, model, messages, target, rea_bin,
                  temperature=.2, max_tokens=1024, context_limit=12000,
-                 max_turns=6, max_calls=8, timeout=DEFAULT_ANALYSIS_TIMEOUT, provider="lmstudio"):
+                 max_turns=6, max_calls=8, timeout=DEFAULT_ANALYSIS_TIMEOUT, provider="lmstudio",session_pool=None):
         super().__init__()
         self.server_base, self.api_key, self.model = server_base.rstrip('/'), api_key, model
         self.messages, self.target, self.rea_bin = copy.deepcopy(messages), str(Path(target).absolute()), rea_bin
         self.temperature, self.max_tokens, self.context_limit = temperature, max_tokens, context_limit
         self.provider = provider
+        self.session_pool,self.analysis_lease=session_pool,None
         self.max_turns, self.max_calls, self.timeout = max_turns, max_calls, timeout
         self.signature = target_signature(self.target)
         self.run_id = uuid.uuid4().hex
@@ -281,26 +283,28 @@ class McpCopilotWorker(QThread):
         router=None;error=None;outcome='Hata'
         try:
             self.check()
-            digest=hashlib.sha256()
-            with open(self.target,'rb') as stream:
-                total=0
-                while True:
-                    self.check();block=stream.read(1048576)
-                    if not block:break
-                    total+=len(block)
-                    if total>512*1024*1024:raise ValueError('Hedef boyut sınırı aşıldı.')
-                    digest.update(block)
-            record['target_sha256']=digest.hexdigest()
+            record['target_sha256']=digest_file(self.target,self.check,progress=self.analysis_progress.emit)
             self.log_line.emit('MCP: özel statik analiz oturumu açılıyor…','run')
             self.phase='MCP bağlantısı'
-            self.client=McpClient(self.rea_bin,self.stopped,self.started+self.timeout,started=self.started)
+            if self.session_pool is not None:
+                self.analysis_lease=self.session_pool.acquire(self.rea_bin,self.target,record['target_sha256'],
+                    self.stopped,self.started+self.timeout,self.started,self.check,expected_signature=self.signature,
+                    progress=self.analysis_progress.emit)
+                self.client=self.analysis_lease.client
+                info,inventory=self.analysis_lease.info,self.analysis_lease.inventory
+                record['analysis_session_reused']=self.analysis_lease.reused
+                if self.analysis_lease.reused:self.log_line.emit('Aynı dosyanın açık analiz oturumu yeniden kullanılıyor.','info')
+            else:
+                self.client=McpClient(self.rea_bin,self.stopped,self.started+self.timeout,started=self.started)
+                self.client.progress=self.analysis_progress.emit
+                info,inventory=self.client.start()
             record['timeout_policy']={'overall_seconds':self.timeout, 'tool_seconds':DEFAULT_TOOL_TIMEOUT,
                                       'ghidra_initial_call_seconds':self.client.ghidra_initial_timeout}
             self.log_line.emit(
                 'Ghidra ilk analizi için '+str(int(self.client.ghidra_initial_timeout))+
                 ' sn, sonraki araçlar için '+str(DEFAULT_TOOL_TIMEOUT)+
                 ' sn bekleme payı; Durdur her zaman kullanılabilir.', 'info')
-            info,inventory=self.client.start();record['server']=info
+            record['server']=info
             self.check()
             router=SelectedTargetTools(self.client,self.target,inventory,self.tool_event.emit,self.max_calls,
                 digest=record['target_sha256'],expected_signature=self.signature)
@@ -376,7 +380,9 @@ class McpCopilotWorker(QThread):
             error=str(exc)
             if self.api_key:error=error.replace(self.api_key,'[gizli]')
         finally:
-            if self.client is not None:
+            if self.analysis_lease is not None:
+                self.analysis_lease.release(healthy=router is not None and router.primary_failed is None)
+            elif self.client is not None:
                 try:self.client.close()
                 except Exception as exc:
                     self.log_line.emit('MCP kapanış ayrıntısı: '+str(exc)[:500],'warn')

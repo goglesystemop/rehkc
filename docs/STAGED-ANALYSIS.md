@@ -22,7 +22,8 @@ kimliği değişirse eski sonuç kullanılmaz. Kullanımdan önce hedefin stat k
 tekrar doğrulanır; devam eden analizde dosya değişirse sonuç reddedilir.
 
 Önbellek **tam Ghidra projesi değildir**. Aynı sorgu yeniden JVM analizi başlatmaz;
-önbellekte olmayan başka sorgu yeni oturumda yeniden içe aktarma gerektirebilir.
+önbellekte olmayan başka sorgu için aynı pencerenin açık analiz oturumu
+kullanılabilir. Oturum kapanmışsa yeniden içe aktarma gerekebilir.
 Ham hedef EXE kopyası saklanmaz; analiz çıktısında hassas string/kod bulunabilir.
 Dosyalar kullanıcıya özel 0600, klasör 0700 izinleriyle oluşturulur. Bozuk veya
 30 günden eski kayıt kullanılmaz. Yazma sırasında yaklaşık 256 MiB/1024 kayıt
@@ -31,6 +32,12 @@ izin hatası analizi engellemez. Hatalar başarılı Ghidra sonucu diye saklanma
 alternatif motor çıktıları kendi kaydı ve sınırlamalarıyla tutulur.
 
 Decompile menüsündeki **Analiz önbelleğini temizle** kayıtları siler.
+**Seçili dosyanın önbelleğini temizle** yalnız o dosyanın kayıtlarını siler;
+diğer dosyaların sonuçları korunur. **Seçili fonksiyonu yeniden analiz et**
+önbelleği okumadan motorları tekrar çalıştırır ve başarılı yeni sonucu saklar.
+Ghidra hatası sonrası alternatif motorla alınan sonuç 5 dakika geçerlidir;
+sonrasında ana motor yeniden denenir. Açıkça seçilmiş RetDec/Radare2 sonuçları
+ve başarılı Ghidra sonuçları normal 30 günlük kurala tabidir.
 `REHKC_DISABLE_ANALYSIS_CACHE=1 rehkc` önbellek okuma/yazmasını kapatır.
 Araç günlüğünde `cache_hit` görülür. Sohbet oturumunu açmak kayıtlı araçları çalıştırmaz.
 
@@ -73,3 +80,30 @@ statik içe aktarma/normalleştirme işlemlerini yapabilir.
 Test kapsamı ve sınırlamaları [sürüm notlarında](RELEASE-0.3.0.md) yer alır.
 UPX test aracı uygulama bağımlılığı değildir; test için [resmî UPX sürümü](https://github.com/upx/upx/releases/tag/v5.2.1)
 kullanılır. Ticari VMProtect/Themida sürümleriyle başarı garantisi yoktur.
+
+İkinci yerel grupta aynı pencere içinde açık analiz oturumunun farklı sorgulara
+paylaşılması, PE güvenlik başlıkları ve ilerleme görünümü eklendi. Ayrıntılar:
+[İkinci yerel grup](NEXT-LOCAL-BATCH.md).
+
+## Seçili kodu dışa aktarma
+
+Güncel otomatik decompile, RetDec veya Radare2 kod sonucunda `Decompiled C`
+veya `Disassembly` sekmesine geçin. Sağ tık → **Seçili kodu dışa aktar…**,
+More Tools → Decompilation Engines → aynı seçenek veya **Ctrl+Shift+E** kullanın.
+Metin seçiliyse yalnız seçim; seçim yoksa motorun tam kod sonucu aktarılır.
+Markdown (`.md`), düz metin (`.txt`) ve yapılandırılmış JSON (`.json`) desteklenir.
+
+Dosya; hedef yolunu, hedef SHA256'sını, fonksiyon/adresi, motoru, bildirilen motor
+sürümünü, varsa motor kimliğini ve analiz zamanını, önbellek/oturum durumunu,
+paketleyici işaretlerini, sınırlamaları ve alternatif motora geçişte önceki hataları
+içerir. Motor sürümü veya eski önbellekte analiz zamanı yoksa `bilinmiyor` yazılır;
+kurulu motorun bugünkü sürümü eski sonuca atanmaz. Dışa aktarma zamanı ayrıca UTC
+olarak yazılır. Hedef yolu raporda bulunur; paylaşmadan önce gözden geçirin.
+Sohbet geçmişi ve hesap ayarları bu dosyaya eklenmez.
+
+Sonuç özgün kaynak kod değildir. Seçimin fonksiyonun tamamını kapsadığı garanti
+edilmez; korumalı dosyanın sonucu yalnız yükleyiciye ait olabilir. Hedef değişirse,
+çıktı yenilenirse veya kayıtlı oturumdan motor kanıtı olmayan eski metin açılırsa
+önce yeniden analiz gerekir. Kod görünümü yeni analiz için değiştiğinde önceki
+sonucun dışa aktarma bilgisi kaldırılır.
+Hedef dosyanın üzerine yazma engellenir; rapor atomik ve özel izinle kaydedilir.

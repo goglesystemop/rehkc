@@ -99,10 +99,12 @@ class McpClient:
         self.next_id = 0
         self.pending = None
         self.opened = False
+        self.progress = None
 
     def check(self, deadline, ignore_cancel=False):
         if self.stopped.is_set() and not ignore_cancel:
             raise McpCancelled('MCP analizi durduruldu.')
+        if not ignore_cancel:self.report_progress()
         if time.monotonic() > deadline:
             now = time.monotonic()
             if not ignore_cancel and self.deadline <= deadline:
@@ -110,6 +112,18 @@ class McpClient:
                 raise McpTimeout(operation, 'toplam analiz', self.deadline-self.started, now-self.started)
             context = self.request_context or {'operation':'MCP iletişimi', 'limit':max(0, deadline-now), 'started':now}
             raise McpTimeout(context['operation'], context.get('scope','araç çağrısı'), context['limit'], now-context['started'])
+
+    def report_progress(self,status='running',force=False):
+        context=self.request_context
+        callback=getattr(self,'progress',None)
+        if not callback or not context:return
+        now=time.monotonic()
+        if not force and now-context.get('last_progress',float('-inf'))<1:return
+        context['last_progress']=now;activity=context.get('last_activity')
+        try:callback({'operation':context['operation'],'elapsed':round(now-context['started'],2),
+            'limit_seconds':context['limit'],'last_activity_seconds':None if activity is None else round(now-activity,2),
+            'status':status})
+        except Exception:pass
 
     def write(self, value, deadline, ignore_cancel=False):
         import select
@@ -164,11 +178,13 @@ class McpClient:
                         raise ValueError('Geçersiz MCP protokol yanıtı.')
                     if response.get('id') != identifier:
                         continue
-                    self.pending = None
                     if 'error' in response:
+                        self.pending = None
                         raise RuntimeError('MCP: '+str(response['error'])[:1500])
                     if not isinstance(response.get('result'), dict):
                         raise ValueError('MCP sonuç nesnesi eksik.')
+                    self.pending = None
+                    self.report_progress('completed',True)
                     return response['result']
                 if len(self.buffer) > self.MAX_MESSAGE:
                     raise ValueError('MCP yanıtı 8 MB sınırını aştı.')
@@ -177,6 +193,7 @@ class McpClient:
                     if not block:
                         self.selector.unregister(key.fileobj)
                         continue
+                    if self.request_context is not None:self.request_context['last_activity']=time.monotonic()
                     if key.data == 'stderr':
                         self.stderr.extend(block)
                         del self.stderr[:-65536]
@@ -254,7 +271,7 @@ SCHEMAS = {
 
 
 class SelectedTargetTools:
-    def __init__(self, client, path, inventory, emit, max_calls=8, digest=None, expected_signature=None):
+    def __init__(self, client, path, inventory, emit, max_calls=8, digest=None, expected_signature=None, read_cache=True):
         self.client, self.path, self.inventory, self.emit = client, str(Path(path).absolute()), inventory, emit
         self.signature = target_signature(self.path)
         if expected_signature is not None and self.signature != expected_signature:
@@ -262,13 +279,14 @@ class SelectedTargetTools:
         self.calls = 0
         self.max_calls = max_calls
         self.events = []
-        self.ready = False
-        self.ghidra_initialized = False
+        self.ready = getattr(client,'selected_target',None)==(self.path,self.signature) and getattr(client,'selected_ready',False)
+        self.ghidra_initialized = self.ready and getattr(client,'ghidra_ready',False)
         self.primary_failed = None
-        self.analysis = StaticAnalysis(self.path, self.check)
+        self.analysis = StaticAnalysis(self.path, self.check,progress=getattr(client,'progress',None))
         self.cache = None
         if getattr(client, 'binary', None):
-            self.cache = ResultCache(digest or digest_file(self.path, self.check), engine_identity(client.binary,self.check),target=self.path)
+            self.cache = ResultCache(digest or digest_file(self.path, self.check), engine_identity(client.binary,self.check),
+                target=self.path,read_enabled=read_cache)
         self.available = {name for name in SCHEMAS if name in inventory}
         if not os.environ.get('REA_PWNTOOLS_PYTHON'):
             self.available.discard('inspect_binary_layout')
@@ -408,6 +426,8 @@ class SelectedTargetTools:
                             return alternative(supplied, self.primary_failed)
                         return opened
                     self.ready=True
+                    self.client.selected_target=(self.path,self.signature)
+                    self.client.selected_ready=True
                 if name=='search_strings':
                     args.update(mode='literal',case_sensitive=False)
             try:
@@ -428,6 +448,7 @@ class SelectedTargetTools:
                     return alternative(supplied, 'Ghidra seçili fonksiyon için kod gövdesi üretmedi.')
             if uses_ghidra and not result.get('isError') and not (isinstance(result.get('structuredContent'),dict) and result['structuredContent'].get('ok') is False):
                 self.ghidra_initialized = True
+                self.client.ghidra_ready = True
             return save(result)
         def attempt():
             try:return operation()

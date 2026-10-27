@@ -43,11 +43,11 @@ class StagedAnalysis(unittest.TestCase):
             if isinstance(result,Exception):raise result
             return result or {'structuredContent':{'normalized_result':'int entry(void) { return 3; }','engine':'ghidra'}}
         c.call=call;return c
-    def router(self,client=None):
+    def router(self,client=None,**kwargs):
         inventory={name:{} for name in mcp.SCHEMAS}
         inventory['open_binary']={'inputSchema':{'properties':{'provider_id':{}}}}
         with patch.object(mcp,'engine_identity',return_value='fixture-engine-v1'):
-            return mcp.SelectedTargetTools(client or self.client(),self.target,inventory,lambda event:None)
+            return mcp.SelectedTargetTools(client or self.client(),self.target,inventory,lambda event:None,**kwargs)
 
     def test_preflight_detects_pe_and_packer_without_engine(self):
         pe_fixture(self.target,b'UPX1',bytes(range(256))*2)
@@ -96,6 +96,39 @@ class StagedAnalysis(unittest.TestCase):
     def test_expired_cache_is_a_miss(self):
         c=analysis.ResultCache('file','engine');c.put('x',{}, {'value':'ok'})
         os.utime(c.path('x',{}),(0,0));self.assertIsNone(c.get('x',{}))
+    def test_fallback_expires_soon_while_primary_result_remains_valid(self):
+        c=analysis.ResultCache('file','engine')
+        fallback=analysis.evidence('radare2','code','void f() {}',['approximate'])
+        fallback['structuredContent']['fallback_from']=[{'engine':'ghidra','error':'temporary error'}]
+        c.put('fallback',{},fallback);c.put('primary',{}, {'value':'primary'})
+        self.assertEqual(c.get('fallback',{}),fallback)
+        old=time.time()-301
+        for operation in ('fallback','primary'):os.utime(c.path(operation,{}),(old,old))
+        self.assertIsNone(c.get('fallback',{}));self.assertEqual(c.get('primary',{}),{'value':'primary'})
+    def test_force_refresh_skips_reads_but_updates_successful_cache(self):
+        self.router().execute('procedure_pseudo_code',{'procedure':'entry'})
+        replacement={'structuredContent':{'normalized_result':'int entry() {return 7;}'}}
+        r=self.router(self.client(replacement),read_cache=False)
+        result=r.execute('procedure_pseudo_code',{'procedure':'entry'})
+        self.assertNotIn('cache_hit',result);self.assertEqual(self.calls.count('procedure_pseudo_code'),2)
+        self.assertEqual(self.router().execute('procedure_pseudo_code',{'procedure':'entry'})['structuredContent'],replacement['structuredContent'])
+    def test_target_clear_covers_old_engine_versions_and_preserves_other_files(self):
+        a=analysis.ResultCache('file1','engine1',target=str(self.target))
+        b=analysis.ResultCache('file2','engine2',target=str(self.target))
+        other=analysis.ResultCache('file1','engine1',target=str(self.root/'other.exe'))
+        for c in (a,b,other):c.put('code',{}, {'value':'ok'})
+        self.assertEqual(analysis.ResultCache.clear_target(self.target),2)
+        self.assertIsNone(a.get('code',{}));self.assertIsNone(b.get('code',{}))
+        self.assertEqual(other.get('code',{}),{'value':'ok'})
+    def test_failed_cache_write_leaves_no_temporary_payload(self):
+        c=analysis.ResultCache('file','engine')
+        with patch.object(analysis.os,'replace',side_effect=PermissionError('read only')):c.put('code',{}, {'value':'ok'})
+        self.assertEqual(list(c.root.iterdir()),[])
+    def test_refresh_keeps_fallback_available(self):
+        r=self.router(self.client(RuntimeError('Ghidra unavailable')),read_cache=False)
+        with patch.object(r.analysis,'fallback',return_value=analysis.evidence('retdec','procedure_pseudo_code','int f() {}')) as fallback:
+            result=r.execute('procedure_pseudo_code',{'procedure':'entry'})
+        fallback.assert_called_once();self.assertEqual(result['structuredContent']['engine'],'retdec')
     def test_invalid_model_arguments_never_reach_cache_or_process(self):
         r=self.router()
         for name,args in [('procedure_pseudo_code',{'procedure':'main','path':'/etc/passwd'}),('quick_functions',{'command':'pdc'}),('inspect_with_objdump',{'operation':'symbols','symbol':'main'})]:

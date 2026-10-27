@@ -62,6 +62,27 @@ if a.retdec_target:
     value=observation(retdec)
     assert value['engine']=='retdec' and value['observed_result'].strip()
     report['retdec_positive_test']=True
+# Different operations must reuse the same imported Program, with result-cache
+# reads disabled so a cached response cannot conceal a broken session lease.
+from rea_analysis_session import AnalysisSessionPool
+from rea_analysis import digest_file
+pool=AnalysisSessionPool();warm=[];client=None
+try:
+    for name,args in [('procedure_pseudo_code',{'procedure':a.procedure}),('procedure_assembly',{'procedure':a.procedure})]:
+        now=time.monotonic();lease=pool.acquire(a.engine,a.target,digest_file(a.target),threading.Event(),now+600,now)
+        client=lease.client;router=None
+        try:
+            router=SelectedTargetTools(client,a.target,lease.inventory,lambda event:None,read_cache=False)
+            result=router.execute(name,args)
+            assert observation(result).get('normalized_result') is not None
+            warm.append({'operation':name,'session_reused':lease.reused,'pid':client.process.pid,
+                         'open_binary_called':any(e['tool']=='open_binary' for e in router.events)})
+        finally:lease.release(healthy=router is not None and router.primary_failed is None)
+    assert warm[1]['session_reused'] and not warm[1]['open_binary_called']
+    assert warm[0]['pid']==warm[1]['pid']
+finally:pool.close()
+assert client.process.poll() is not None
+report['warm_session']={'runs':warm,'closed_after_test':True}
 report['target_unchanged']=hashlib.sha256(a.target.read_bytes()).hexdigest()==before
 assert report['target_unchanged']
 report['ok']=True

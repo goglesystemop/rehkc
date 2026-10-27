@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """Build an offline runtime bundle from pinned public inputs and the recorded REA motor."""
-import argparse,hashlib,json,os,pathlib,shutil,subprocess,tarfile,urllib.request
+import argparse,hashlib,json,os,pathlib,re,shutil,subprocess,tarfile,urllib.request
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 def digest(path):
  h=hashlib.sha256()
  with path.open('rb') as f:
   for block in iter(lambda:f.read(1024*1024),b''):h.update(block)
  return h.hexdigest()
+def local_version(version,label):
+ if label is None:return version
+ if len(label)>48 or not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)*',label):
+  raise ValueError('Local build label must contain lowercase letters/numbers separated by dots or hyphens (max 48 characters).')
+ return version+'-'+label
 def main():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--engine',required=True,type=pathlib.Path);p.add_argument('--stage',required=True,type=pathlib.Path);p.add_argument('--output',required=True,type=pathlib.Path);p.add_argument('--runtime-archive',type=pathlib.Path);p.add_argument('--assets',type=pathlib.Path)
- a=p.parse_args();release=json.loads((ROOT/'packaging/version.json').read_text());version=release['version'];package_name='rehkc-'+version+'-linux-x86_64';spec=json.loads((ROOT/'packaging/doctor-runtime-spec.json').read_text());meta=json.loads((ROOT/'packaging/python-runtime.json').read_text())
+ p.add_argument('--local-build',help='Unique local development label, e.g. dev.20261027.1; does not update release metadata')
+ a=p.parse_args();release=json.loads((ROOT/'packaging/version.json').read_text());version=local_version(release['version'],a.local_build);package_name='rehkc-'+version+'-linux-x86_64';spec=json.loads((ROOT/'packaging/doctor-runtime-spec.json').read_text());meta=json.loads((ROOT/'packaging/python-runtime.json').read_text())
  if digest(a.engine)!=spec['binary_sha256']:raise SystemExit('Unexpected REA motor; existing motor was not replaced.')
  a.stage.mkdir(parents=True,exist_ok=True);a.output.mkdir(parents=True,exist_ok=True)
  archive=a.runtime_archive or a.output/meta['name']
@@ -24,6 +30,11 @@ def main():
  app=a.stage/'app';app.mkdir(exist_ok=True)
  for source in (ROOT/'app').iterdir():
   if source.is_file() and (source.suffix=='.py' or source.name in ('rea-engine','ai-icon.png')):shutil.copy2(source,app/source.name)
+ if a.local_build:
+  boot=app/'rehkc_boot.py'
+  text,count=re.subn(r'^VERSION = [^\n]+$',lambda match:'VERSION = '+repr(version),boot.read_text(),count=1,flags=re.M)
+  if count!=1:raise ValueError('Could not stamp local launcher version.')
+  boot.write_text(text)
  shutil.copytree(ROOT/'app/bridge',app/'bridge',dirs_exist_ok=True)
  shutil.copy2(ROOT/'app/analysis-tools.json',app/'analysis-tools.json')
  shutil.copy2(ROOT/'packaging/requirements.lock',app/'python-requirements.lock')
@@ -43,7 +54,7 @@ def main():
  for name in ['run','install.sh','installer.py','README.md','LICENSE','THIRD_PARTY_NOTICES.md']:
   shutil.copy2(ROOT/name,a.stage/name)
  shutil.copytree(ROOT/'docs',a.stage/'docs',dirs_exist_ok=True);shutil.copytree(ROOT/'licenses',a.stage/'licenses',dirs_exist_ok=True)
- (a.stage/'build-info.json').write_text(json.dumps({'application':'rehkc','version':version,'platform':'linux-x86_64','glibc_minimum':'2.28','desktop_verified_scope':release['desktop_verified_scope'],'engine_sha256':spec['binary_sha256'],'engine_version':'6.7.0','python_runtime':meta,'requirements_lock_sha256':digest(ROOT/'packaging/requirements.lock')},indent=2))
+ (a.stage/'build-info.json').write_text(json.dumps({'application':'rehkc','version':version,'source_version':release['version'],'channel':'local-development' if a.local_build else 'release','platform':'linux-x86_64','glibc_minimum':'2.28','desktop_verified_scope':release['desktop_verified_scope'],'engine_sha256':spec['binary_sha256'],'engine_version':'6.7.0','python_runtime':meta,'requirements_lock_sha256':digest(ROOT/'packaging/requirements.lock')},indent=2))
  entries={}
  for f in sorted(a.stage.rglob('*')):
   rel=f.relative_to(a.stage).as_posix()
@@ -59,6 +70,7 @@ def main():
   for f in sorted(a.stage.rglob('*')):
    if '__pycache__' not in f.parts:t.add(f,arcname=package_name+'/' +f.relative_to(a.stage).as_posix(),recursive=False)
  sha=digest(target);(a.output/'SHA256SUMS').write_text(sha+'  '+target.name+'\n')
- (ROOT/'packaging/release.json').write_text(json.dumps({'version':version,'asset':target.name,'url':'https://github.com/goglesystemop/rehkc/releases/download/v'+version+'/'+target.name,'sha256':sha},indent=2)+'\n')
+ if not a.local_build:
+  (ROOT/'packaging/release.json').write_text(json.dumps({'version':version,'asset':target.name,'url':'https://github.com/goglesystemop/rehkc/releases/download/v'+version+'/'+target.name,'sha256':sha},indent=2)+'\n')
  print(json.dumps({'archive':str(target),'bytes':target.stat().st_size,'sha256':sha,'files':len(entries)},indent=2))
 if __name__=='__main__':main()

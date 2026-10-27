@@ -180,3 +180,7 @@ GPLv3 masaüstü dağıtımı; orijinal bileşenlerin lisansları korunur.
 
 Aşamalı ön inceleme, önbellek ve Ghidra → RetDec/Radare2 geçişinin kapsamı:
 [Aşamalı analiz](docs/STAGED-ANALYSIS.md).
+
+[Yerel geliştirme ve 3–5 geliştirmede toplu yayın](docs/DEVELOPMENT.md).
+
+[İkinci yerel geliştirme grubu](docs/NEXT-LOCAL-BATCH.md).

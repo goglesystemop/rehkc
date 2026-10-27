@@ -42,14 +42,24 @@ def signature(path):
     return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
 
 
-def digest_file(path, check=lambda: None):
+def digest_file(path, check=lambda: None, progress=None):
     digest = hashlib.sha256()
+    started=time.monotonic();last=started-1;read=0;total=os.stat(path).st_size
     with open(path, 'rb') as stream:
         while True:
             check()
             block = stream.read(1024 * 1024)
             if not block:break
-            digest.update(block)
+            digest.update(block);read+=len(block);now=time.monotonic()
+            if progress and now-last>=1:
+                try:progress({'operation':'Dosya SHA256 kontrolü','elapsed':round(now-started,2),
+                          'bytes_read':read,'total_bytes':total,'status':'running','last_activity_seconds':0})
+                except Exception:pass
+                last=now
+    if progress:
+        try:progress({'operation':'Dosya SHA256 kontrolü','elapsed':round(time.monotonic()-started,2),
+                          'bytes_read':read,'total_bytes':total,'status':'completed','last_activity_seconds':0})
+        except Exception:pass
     return digest.hexdigest()
 
 
@@ -98,16 +108,29 @@ def engine_identity(binary=None, check=lambda:None):
 
 class ResultCache:
     """Successful observations only; corruption is a miss, never an executable input."""
-    def __init__(self, digest, identity, root=None, target=''):
+    def __init__(self, digest, identity, root=None, target='', read_enabled=True):
+        target=str(Path(target).absolute()) if target else ''
         self.digest, self.identity = digest, identity+'|'+target
+        self.target_id=hashlib.sha256(target.encode()).hexdigest()
+        self.read_enabled=read_enabled
         self.root = Path(root) if root is not None else data_dir()/'analysis-cache'
 
     def path(self, operation, arguments):
         key = json.dumps([REVISION, self.digest, self.identity, operation, arguments], sort_keys=True)
-        return self.root/(hashlib.sha256(key.encode()).hexdigest()+'.json')
+        return self.root/(self.target_id+'-'+hashlib.sha256(key.encode()).hexdigest()+'.json')
+
+    @staticmethod
+    def clear_target(target, root=None):
+        directory=Path(root) if root is not None else data_dir()/'analysis-cache'
+        prefix=hashlib.sha256(str(Path(target).absolute()).encode()).hexdigest()
+        count=0
+        for path in directory.glob(prefix+'-*.json'):
+            try:path.unlink();count+=1
+            except OSError:pass
+        return count
 
     def get(self, operation, arguments):
-        if os.environ.get('REHKC_DISABLE_ANALYSIS_CACHE') == '1':return None
+        if not self.read_enabled or os.environ.get('REHKC_DISABLE_ANALYSIS_CACHE') == '1':return None
         p = self.path(operation, arguments)
         try:
             if p.is_symlink() or p.stat().st_size > MAX_RESULT or time.time()-p.stat().st_mtime > 30*86400:return None
@@ -116,6 +139,9 @@ class ResultCache:
             if hashlib.sha256(raw.encode()).hexdigest() != envelope['sha256']:return None
             result = envelope['result']
             if not isinstance(result, dict):return None
+            value=result.get('structuredContent')
+            if isinstance(value,dict) and value.get('fallback_from') and time.time()-p.stat().st_mtime>300:
+                return None  # Retry the primary after a transient fallback, rather than pinning it for 30 days.
             return result
         except (OSError, ValueError, KeyError, TypeError):return None
 
@@ -124,6 +150,7 @@ class ResultCache:
         raw = json.dumps(result, sort_keys=True, ensure_ascii=False)
         envelope = json.dumps({'result':result, 'sha256':hashlib.sha256(raw.encode()).hexdigest()}, ensure_ascii=False)
         if len(envelope.encode()) > MAX_RESULT:return
+        temporary=None
         try:
             self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
             entries = sorted((p for p in self.root.glob('*.json') if not p.is_symlink()), key=lambda p:p.stat().st_mtime)
@@ -137,6 +164,10 @@ class ResultCache:
                 temporary = Path(f.name);f.write(envelope)
             os.replace(temporary, self.path(operation, arguments))
         except OSError:pass  # An unwritable cache must not prevent analysis.
+        finally:
+            if temporary is not None:
+                try:temporary.unlink(missing_ok=True)
+                except OSError:pass
 
 
 def evidence(engine, operation, value, limitations=None):
@@ -156,9 +187,20 @@ def observation(result):
 
 
 class StaticAnalysis:
-    def __init__(self, path, check=lambda:None):
+    def __init__(self, path, check=lambda:None, progress=None):
         self.path = str(Path(path).absolute());self.check = check
+        self.progress=progress;self.last_progress=None
         self.before = signature(self.path)
+
+    def pulse(self,operation,started,limit=None,activity=None,status='running',force=False,**fields):
+        if not self.progress:return
+        now=time.monotonic()
+        if not force and self.last_progress and self.last_progress[0]==operation and now-self.last_progress[1]<1:return
+        self.last_progress=(operation,now)
+        event={'operation':operation,'elapsed':round(now-started,2),'limit_seconds':limit,
+               'last_activity_seconds':None if activity is None else round(now-activity,2),'status':status,**fields}
+        try:self.progress(event)
+        except Exception:pass
 
     def unchanged(self):
         self.check()
@@ -188,6 +230,21 @@ class StaticAnalysis:
                         base = struct.unpack_from('<Q' if magic==0x20b else '<I', optional, 24 if magic==0x20b else 28)[0]
                         result.update(format='PE', architecture={0x14c:'x86',0x8664:'x86_64',0xaa64:'arm64'}.get(machine,hex(machine)),
                                       entry=hex(base+struct.unpack_from('<I',optional,16)[0]))
+                        flags=struct.unpack_from('<H',optional,70)[0] if len(optional)>=72 else 0
+                        directory_start=112 if magic==0x20b else 96
+                        count_offset=108 if magic==0x20b else 92
+                        directories=struct.unpack_from('<I',optional,count_offset)[0] if len(optional)>=count_offset+4 else 0
+                        def directory(index):
+                            offset=directory_start+index*8
+                            return struct.unpack_from('<II',optional,offset) if directories>index and len(optional)>=offset+8 else (0,0)
+                        relocation=directory(5);certificate=directory(4);clr=directory(14)
+                        result['pe_security']={'dll_characteristics':hex(flags),'dynamic_base':bool(flags&0x40),
+                            'nx_compatible':bool(flags&0x100),'guard_cf':bool(flags&0x4000),
+                            'high_entropy_va':bool(flags&0x20),'no_seh':bool(flags&0x400),
+                            'relocation_directory_declared':bool(relocation[0] and relocation[1]),
+                            'certificate_table_declared':bool(certificate[0] and certificate[1]),
+                            'certificate_table_in_file':bool(certificate[0] and certificate[1] and certificate[0]<=self.before[2] and certificate[1]<=self.before[2]-certificate[0]),
+                            'clr_directory_declared':bool(clr[0] and clr[1]),'signature_verified':False}
                         table = f.read(count*40)
                         if len(table)!=count*40:raise ValueError('Kesik PE bölüm tablosu.')
                         for i in range(count):
@@ -199,7 +256,8 @@ class StaticAnalysis:
                             f.seek(offset);sample=f.read(min(size,65536))
                             entropy = -sum((n/len(sample))*math.log2(n/len(sample)) for n in Counter(sample).values()) if sample else 0
                             result['sections'].append({'name':name,'address':hex(base+rva),'virtual_size':virtual_size,
-                                                       'raw_size':size,'entropy_sample':round(entropy,3),'executable':bool(flags&0x20000000)})
+                                                       'raw_size':size,'entropy_sample':round(entropy,3),'executable':bool(flags&0x20000000),
+                                                       'writable':bool(flags&0x80000000)})
                             if name.upper().startswith(('UPX', '.VMP', '.THEMIDA', '.ASPACK')):result['packer_indicators'].append('section:'+name)
                             if flags&0x20000000 and entropy>=7.2:result['packer_indicators'].append('high_entropy_executable:'+name)
             result['recommended_stage']='quick_then_selected_function'
@@ -207,16 +265,20 @@ class StaticAnalysis:
                 result['limitations'].append('Kod paketlenmiş/korumalı olabilir. Çözülen kod yalnız yükleyici olabilir; asıl programın çözüldüğü iddia edilmemeli.')
         self.unchanged();return result
 
-    def command(self, args, timeout=45, env=None, operation=None):
+    def command(self, args, timeout=45, env=None, operation=None, capture_stderr=False):
         self.check()
         with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
             command=[sys.executable,'-I','-B',str(Path(__file__).with_name('rea_native_guard.py')),
                      str(memory_policy()['native_memory_bytes']),str(math.ceil(timeout)+3),*map(str,args)]
             p = subprocess.Popen(command, stdout=out, stderr=err, start_new_session=True, env=env)
-            started=time.monotonic()
+            started=time.monotonic();activity=None;sizes=(0,0);operation=operation or Path(args[0]).name
+            self.pulse(operation,started,timeout,force=True)
             try:
                 while p.poll() is None:
                     self.check()
+                    current=(os.fstat(out.fileno()).st_size,os.fstat(err.fileno()).st_size)
+                    if current!=sizes:activity=time.monotonic();sizes=current
+                    self.pulse(operation,started,timeout,activity)
                     if time.monotonic()-started>timeout:
                         raise NativeTimeout(operation or Path(args[0]).name,timeout,time.monotonic()-started)
                     if os.fstat(out.fileno()).st_size>MAX_RESULT or os.fstat(err.fileno()).st_size>1024**2:raise ValueError('Motor çıktı sınırı aşıldı.')
@@ -229,7 +291,9 @@ class StaticAnalysis:
                     if len(detail)>1600:detail=detail[:1000]+'\n…\n'+detail[-500:]
                     raise ValueError(Path(args[0]).name+f': çıkış kodu {p.returncode}; '+
                         detail+(' (Kaynak sınırı veya dış sonlandırma olabilir.)' if p.returncode<0 else ''))
-                return text.decode(errors='replace')
+                decoded=text.decode(errors='replace')
+                self.pulse(operation,started,timeout,activity,status='completed',force=True)
+                return (decoded,error.decode(errors='replace')) if capture_stderr else decoded
             finally:
                 try:os.killpg(p.pid, signal.SIGKILL)
                 except ProcessLookupError:pass
@@ -239,6 +303,41 @@ class StaticAnalysis:
         p=shutil.which(name)
         if not p:raise ValueError(name+' bulunamadı; Analiz araçlarının durumu ekranını kontrol edin.')
         return p
+
+    def strings(self, max_rows=10000, max_text_bytes=2*1024**2):
+        """Bounded fragments with real file offsets; a quota preserves partial evidence."""
+        patterns=[(re.compile(rb'[\x20-\x7e\x80-\xff]{4,512}'),'8-bit / UTF-8','utf-8'),
+                  (re.compile(rb'(?:[\x20-\x7e]\x00){4,512}'),'UTF-16LE (ASCII aralığı)','utf-16-le'),
+                  (re.compile(rb'(?:\x00[\x20-\x7e]){4,512}'),'UTF-16BE (ASCII aralığı)','utf-16-be')]
+        rows=[];seen=set();carry=b'';read=0;text_bytes=0;limited=False;started=time.monotonic()
+        with open(self.path,'rb') as stream:
+            while True:
+                self.unchanged();chunk=stream.read(65536);eof=not chunk
+                block=carry+chunk;start=read-len(carry);read+=len(chunk)
+                self.pulse('String taraması',started,activity=time.monotonic(),bytes_read=read,total_bytes=self.before[2])
+                ready=len(block) if eof else max(0,len(block)-1024)
+                candidates=[]
+                for pattern,label,encoding in patterns:
+                    for match in pattern.finditer(block):
+                        if match.start()>=ready:continue
+                        offset=start+match.start();key=(offset,label)
+                        if key not in seen:candidates.append((offset,label,match.group().decode(encoding,errors='replace')))
+                for offset,label,text in sorted(candidates):
+                    self.check();size=len(text.encode('utf-8'))
+                    if len(rows)>=max_rows or text_bytes+size>max_text_bytes:
+                        limited=True;break
+                    seen.add((offset,label));rows.append({'offset':offset,'encoding':label,'text':text});text_bytes+=size
+                if limited or eof:break
+                # All deferred starts are in this suffix; already emitted starts
+                # are deduplicated when their bytes cross the next chunk boundary.
+                carry=block[-2048:]
+        self.unchanged()
+        self.pulse('String taraması',started,activity=time.monotonic(),status='partial' if limited else 'completed',
+                   force=True,bytes_read=read,total_bytes=self.before[2])
+        return {'strings':rows,'partial':limited,'scanned_bytes':read,'file_bytes':self.before[2],
+                'fragment_limit':512,'limitations':['En fazla 512 bayt/kod birimlik string parçaları; UTF-16 yalnız ASCII aralığı.',
+                    'String adayları insan tarafından yazılmış metin olduğunu kanıtlamaz.']+
+                    (['Çıktı kotasına ulaşıldı; dosyanın kalanında başka stringler olabilir.'] if limited else [])}
 
     def quick_functions(self):
         rabin=self.executable('rabin2')

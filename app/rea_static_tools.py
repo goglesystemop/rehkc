@@ -44,86 +44,71 @@ def elf_mitigations(raw):
 
 
 class StaticInspectionWorker(ExtraEngineWorker):
-    def extract_strings(self, cwd):
-        tool = self.executable('strings')
-        rows = []
-        text_bytes = 0
-        for encoding, label in [('S', '8-bit / UTF-8'), ('l', 'UTF-16LE'), ('b', 'UTF-16BE')]:
-            raw, _ = self.command([tool, '-a', '-n', '4', '-t', 'x', '-e', encoding, '--', self.target], cwd)
-            text_bytes += len(raw.encode('utf-8'))
-            if text_bytes > 8 * 1024 * 1024:
-                raise ValueError('Toplam string çıktısı 8 MB sınırını aştı; sonuç kısmi gösterilmedi.')
-            for line in raw.split('\n'):
-                self.check()
-                match = re.match(r'^\s*([0-9a-fA-F]+) (.*)$', line)
-                if not match:
-                    continue
-                rows.append({'offset': int(match.group(1), 16), 'encoding': label, 'text': match.group(2)})
-                if len(rows) > 100000:
-                    raise ValueError('String sayısı 100.000 sınırını aştı; sonuç kısmi gösterilmedi.')
-        rows.sort(key=lambda row: (row['offset'], row['encoding']))
-        report = ['Rea — statik string çıkarma', 'Hedef: ' + self.target,
-                  'En az 4 karakter; tüm dosya; GNU strings -e S/l/b.',
-                  'Adresler sanal adres değil, dosya içindeki bayt ofsetleridir.',
-                  '8-bit metin UTF-8 olarak gösterilir; çözülemeyen baytlar değiştirme karakteriyle gösterilebilir.',
-                  'UTF-16 taraması GNU strings kapsamıyla sınırlıdır.', '', 'Bulunan string sayısı: ' + str(len(rows)), '']
-        report += [f"0x{row['offset']:08x} [{row['encoding']}] {row['text']}" for row in rows]
-        return {'engine': self.engine, 'target': self.target, 'strings': rows, 'report': '\n'.join(report)}
+    """The shared bounded runner is composed explicitly, not inherited implicitly."""
+    def extract_strings(self):
+        data=self.service.strings()
+        report=['REHKC — statik string incelemesi','Hedef: '+self.target,
+                'Adresler dosya içindeki bayt ofsetleridir; hedef çalıştırılmadı.',
+                f"Taranan: {data['scanned_bytes']} / {data['file_bytes']} bayt; bulunan parça: {len(data['strings'])}",
+                'KISMİ SONUÇ — çıktı kotası doldu.' if data['partial'] else 'Dosya taraması tamamlandı.',
+                *data['limitations'],'']
+        report += [f"0x{row['offset']:08x} [{row['encoding']}] {row['text']}" for row in data['strings']]
+        return dict(data,engine=self.engine,target=self.target,report='\n'.join(report))
 
-    def security_audit(self, cwd):
-        with open(self.target, 'rb') as source:
-            if source.read(4) != b'\x7fELF':
-                raise ValueError('Security Audit şu anda ELF dosyalarını destekliyor. Bu dosya ELF değil; güvenli/güvensiz sonucu çıkarılmadı.')
-        tool = self.executable('readelf')
-        raw, warnings = self.command([tool, '-W', '-h', '-l', '-d', '-s', '--', self.target], cwd)
-        # A tool accepting a damaged ELF must not produce a confident clean result.
-        if warnings.strip():
-            raise ValueError('readelf uyarı bildirdi; denetim tamamlanmadı: ' + warnings[-5000:])
-        if len(raw.encode('utf-8')) > 8 * 1024 * 1024:
-            raise ValueError('ELF raporu 8 MB sınırını aştı; sonuç kısmi gösterilmedi.')
-        observations = elf_mitigations(raw)
-        lines = ['Rea — ELF güvenlik özellikleri (statik inceleme)', 'Hedef: ' + self.target,
-                 'Bu rapor bir açık taraması veya güvenlik garantisi değildir.',
-                 'Canary/FORTIFY sembolleri tüm fonksiyonların korunduğunu kanıtlamaz.', '',
-                 'ELF türü: ' + observations['elf_type'], 'NX: ' + observations['nx'],
-                 'RELRO: ' + observations['relro'], 'PIE: ' + observations['pie'],
-                 'Stack canary: ' + observations['stack_canary'],
-                 'FORTIFY sembolleri: ' + (', '.join(observations['fortify_symbols']) or 'Kanıt bulunamadı; yokluğu kanıtlanmış değil'),
-                 'W+X LOAD segmenti: ' + ('Gözlendi' if observations['writable_executable_load'] else 'Gözlenmedi'),
-                 'DT_NEEDED bildirimleri: ' + (', '.join(observations['needed']) or 'Yok'),
-                 'RPATH/RUNPATH bildirimleri: ' + ('; '.join(observations['search_paths']) or 'Yok'),
-                 '', 'Kütüphaneler çözülmedi, ldd kullanılmadı ve hedef çalıştırılmadı.']
-        return {'engine': self.engine, 'target': self.target, 'observations': observations,
-                'report': '\n'.join(lines), 'raw_readelf': raw}
+    def security_audit(self):
+        with open(self.target,'rb') as source:magic=source.read(4)
+        if magic[:2]==b'MZ':
+            info=self.service.preflight()
+            if info['format']!='PE':raise ValueError('Geçerli PE başlığı bulunamadı; güvenlik sonucu çıkarılmadı.')
+            flags=info['pe_security']
+            wx=[section['name'] for section in info['sections'] if section['executable'] and section['writable']]
+            observations=dict(flags,writable_executable_sections=wx,packer_indicators=info['packer_indicators'])
+            lines=['REHKC — PE güvenlik özellikleri (statik başlık gözlemleri)','Hedef: '+self.target,
+                   'Bu bir açık taraması, imza doğrulaması veya güvenlik garantisi değildir.','',
+                   'Mimari: '+info['architecture'],
+                   'ASLR / DYNAMIC_BASE bayrağı: '+str(flags['dynamic_base']),
+                   'Relocation dizini bildirimi: '+str(flags['relocation_directory_declared']),
+                   'DEP / NX_COMPAT bayrağı: '+str(flags['nx_compatible']),
+                   'CFG / GUARD_CF bayrağı: '+str(flags['guard_cf']),
+                   'HIGH_ENTROPY_VA bayrağı: '+str(flags['high_entropy_va']),
+                   'İmza tablosu bildirimi: '+str(flags['certificate_table_declared']),
+                   'İmza tablosu dosya sınırları içinde: '+str(flags['certificate_table_in_file']),
+                   'İmza doğrulanmadı; sertifika güveni veya dosyanın güvenli olduğu sonucu çıkarılmaz.',
+                   'CLR/.NET dizini bildirimi: '+str(flags['clr_directory_declared']),
+                   'Yazılabilir ve çalıştırılabilir bölümler: '+(', '.join(wx) or 'Gözlenmedi'),
+                   'Paketleyici işaretleri: '+(', '.join(info['packer_indicators']) or 'Gözlenmedi'),'',
+                   'Bayraklar işletim sisteminin korumayı gerçekten uyguladığını kanıtlamaz.',
+                   'CFG hedef tablosu ve relocation içeriği doğrulanmadı; HIGH_ENTROPY_VA yalnız uygun 64-bit ASLR ile anlamlıdır.']
+            return dict(engine=self.engine,target=self.target,format='PE',observations=observations,report='\n'.join(lines))
+        if magic!=b'\x7fELF':raise ValueError('Security Audit PE ve ELF başlıklarını destekler; dosya biçimi desteklenmiyor.')
+        with open(self.target,'rb') as source:identity=source.read(16)
+        if len(identity)!=16 or identity[4] not in (1,2) or identity[5] not in (1,2) or identity[6]!=1:
+            raise ValueError('ELF kimlik başlığı geçersiz; güvenlik sonucu çıkarılmadı.')
+        tool=self.service.executable('readelf')
+        raw,warnings=self.service.command([tool,'-W','-h','-l','-d','-s','--',self.target],
+            timeout=90,capture_stderr=True,operation='ELF güvenlik başlıkları / readelf',env=dict(os.environ,LC_ALL='C'))
+        if warnings.strip():raise ValueError('readelf uyarı bildirdi; denetim tamamlanmadı: '+warnings[-5000:])
+        observations=elf_mitigations(raw)
+        lines=['REHKC — ELF güvenlik özellikleri (statik inceleme)','Hedef: '+self.target,
+               'Bu rapor bir açık taraması veya güvenlik garantisi değildir.',
+               'Canary/FORTIFY sembolleri tüm fonksiyonların korunduğunu kanıtlamaz.','',
+               'ELF türü: '+observations['elf_type'],'NX: '+observations['nx'],
+               'RELRO: '+observations['relro'],'PIE: '+observations['pie'],
+               'Stack canary: '+observations['stack_canary'],
+               'FORTIFY sembolleri: '+(', '.join(observations['fortify_symbols']) or 'Kanıt bulunamadı; yokluğu kanıtlanmış değil'),
+               'W+X LOAD segmenti: '+str(observations['writable_executable_load']),
+               'DT_NEEDED bildirimleri: '+(', '.join(observations['needed']) or 'Yok'),
+               'RPATH/RUNPATH: '+('; '.join(observations['search_paths']) or 'Yok'),'',
+               'Kütüphaneler çözülmedi, ldd kullanılmadı ve hedef çalıştırılmadı.']
+        return dict(engine=self.engine,target=self.target,format='ELF',observations=observations,report='\n'.join(lines),raw_readelf=raw)
 
     def analyze(self):
-        self.check()
-        before = os.stat(self.target)
-        if not stat.S_ISREG(before.st_mode) or before.st_size > 128 * 1024 * 1024:
-            raise ValueError('En fazla 128 MB boyutunda normal bir dosya seçin.')
-        digest = hashlib.sha256()
-        total = 0
-        with open(self.target, 'rb') as source:
-            while True:
-                self.check()
-                block = source.read(1024 * 1024)
-                if not block:
-                    break
-                total += len(block)
-                if total > 128 * 1024 * 1024:
-                    raise ValueError('Dosya okuma sırasında 128 MB sınırını aştı.')
-                digest.update(block)
-        with tempfile.TemporaryDirectory(prefix='rea-static-inspection-') as cwd:
-            if self.engine == 'strings':
-                result = self.extract_strings(cwd)
-            elif self.engine == 'security_audit':
-                result = self.security_audit(cwd)
-            else:
-                raise ValueError('Bilinmeyen statik inceleme.')
-        self.check()
-        after = os.stat(self.target)
-        signature = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-        if signature(before) != signature(after):
-            raise ValueError('Hedef dosya analiz sırasında değişti; sonuç kullanılmadı.')
-        result['target_sha256'] = digest.hexdigest()
+        import time
+        from rea_analysis import StaticAnalysis,digest_file
+        self.started=time.monotonic();self.service=StaticAnalysis(self.target,self.check,progress=self.analysis_progress.emit)
+        digest=digest_file(self.target,self.check,progress=self.analysis_progress.emit)
+        if self.engine=='strings':result=self.extract_strings()
+        elif self.engine=='security_audit':result=self.security_audit()
+        else:raise ValueError('Bilinmeyen statik inceleme.')
+        self.service.unchanged();result['target_sha256']=digest
         return result

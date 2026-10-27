@@ -11,6 +11,17 @@ hızlı ön inceleme, işlem sonucu önbelleği ve alternatif motor akışı ekl
 - Ghidra hatasında seçici RetDec ve uygun Radare2 işlemleri denenir. Çıktı motoru,
   hata nedeni ve kısmi kapsam açıkça görünür; iptal motor geçişini durdurur.
 - Kaynak bütçeleri RAM/cgroup durumuna göre ayarlanır; kullanıcı ayarları korunur.
+- Aynı pencerede farklı sorgular açık Ghidra analizini yeniden kullanır; 5 dakika
+  boş kalınca, hedef değişince veya pencere kapanınca oturum bırakılır.
+- String incelemesi büyük çıktıyı ofset ve taranan kapsamıyla kısmi olarak korur.
+  PE güvenlik başlıkları ve ELF güvenlik gözlemleri yeniden kullanılabilir.
+- Çalışan işlem, geçen süre ve son araç verisinin yaşı gösterilir. Ghidra için
+  tahminî ilerleme yüzdesi verilmez.
+- Seçili kod Markdown, metin veya JSON olarak dışa aktarılır (sağ tık veya
+  Ctrl+Shift+E). Motor, hedef SHA256, fonksiyon/adres, zaman, önbellek durumu,
+  sınırlamalar ve alternatif motor hataları raporda korunur.
+- Seçili dosyanın önbelleği temizlenebilir; seçili fonksiyonun zorunlu yeniden
+  analizi hem sonuç önbelleğini atlar hem de açık Ghidra analizini yeniler.
 
 Süre sınırları ve seçili dosya statik analiz sınırı korunur. Her korumanın
 çözüleceği veya özgün kaynağın geri geleceği iddia edilmez. Ayrıntılar:
@@ -21,3 +32,10 @@ Ghidra seçili fonksiyon çözümü ve sonraki oturumdan önbellek kullanımıyl
 Kontrollü Ghidra hatasında gerçek RetDec/Radare2 akışı çalıştı. UPX örneğinde
 RetDec komut çözemedi; Radare2'nin yaklaşık sözde kodu kısmi olarak raporlandı.
 Bu test ticari VMProtect/Themida korumalarının çözüldüğü anlamına gelmez.
+
+Yerel son doğrulama: 119 davranış/GUI testi ve 6 dağıtım/kurulum testi geçti.
+Normal başlatıcıdan Ghidra, RetDec ve Radare2 sonuçları üç dışa aktarma biçiminde
+ve yalnız metin seçimiyle doğrulandı. Orijinal dosya ve kullanıcı durumu korundu.
+Gerçek sohbette ikinci farklı sorgu açık Ghidra oturumunu yeniden kullandı.
+Motor sonucu sürüm bildirmiyorsa dışa aktarılan sürüm `bilinmiyor` olur;
+sertifika tablosu bildirimi imza doğrulaması değildir.
