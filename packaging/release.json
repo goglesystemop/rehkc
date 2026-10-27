@@ -1,6 +1,6 @@
 {
-  "version": "0.2.0",
-  "asset": "rehkc-0.2.0-linux-x86_64.tar.gz",
-  "url": "https://github.com/goglesystemop/rehkc/releases/download/v0.2.0/rehkc-0.2.0-linux-x86_64.tar.gz",
-  "sha256": "52e12a83e8b6ebd177ecdd9a202000885bb93d7635b73204746c7982780746f5"
+  "version": "0.2.1",
+  "asset": "rehkc-0.2.1-linux-x86_64.tar.gz",
+  "url": "https://github.com/goglesystemop/rehkc/releases/download/v0.2.1/rehkc-0.2.1-linux-x86_64.tar.gz",
+  "sha256": "a08803f9697fed1d62fdd5965c8934572c2054482a8f8618b0a0af29f1b0c12f"
 }
