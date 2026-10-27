@@ -9,7 +9,7 @@ Sistem OpenGL/X11/font/D-Bus kitaplıkları ve çalışan bir masaüstü oturumu
 
 ## Kurucu davranışı
 
-- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.2.1`.
+- Uygulama: `${XDG_DATA_HOME:-~/.local/share}/rehkc/releases/0.2.2`.
 - Sabit sürüm bağlantısı: aynı dizinde `current`.
 - Komut: `~/.local/bin/rehkc`; menü: kullanıcı uygulama dizininde
   `io.github.goglesystemop.rehkc.desktop`.

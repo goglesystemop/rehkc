@@ -11,7 +11,8 @@ import time
 import uuid
 from urllib.parse import urlsplit
 from PyQt5.QtCore import QThread, pyqtSignal
-from rea_mcp import McpClient, McpCancelled, SelectedTargetTools, SCHEMAS, target_signature
+from rea_mcp import (McpClient, McpCancelled, McpTimeout, SelectedTargetTools, SCHEMAS,
+                     target_signature, DEFAULT_ANALYSIS_TIMEOUT, DEFAULT_TOOL_TIMEOUT)
 
 POLICY = '''You are REA Copilot in selected-file static analysis mode.
 Use the supplied MCP tools to obtain real evidence before answering a binary-analysis question.
@@ -75,7 +76,7 @@ class McpCopilotWorker(QThread):
 
     def __init__(self, server_base, api_key, model, messages, target, rea_bin,
                  temperature=.2, max_tokens=1024, context_limit=12000,
-                 max_turns=6, max_calls=8, timeout=300, provider="lmstudio"):
+                 max_turns=6, max_calls=8, timeout=DEFAULT_ANALYSIS_TIMEOUT, provider="lmstudio"):
         super().__init__()
         self.server_base, self.api_key, self.model = server_base.rstrip('/'), api_key, model
         self.messages, self.target, self.rea_bin = copy.deepcopy(messages), str(Path(target).absolute()), rea_bin
@@ -91,6 +92,8 @@ class McpCopilotWorker(QThread):
         self.actual_model = ''
         self.first_text = None
         self.started = None
+        self.phase = 'Dosya kontrolü'
+        self.wait_context = None
         policy = POLICY + ('\nGive concise direct answers. /no_think' if 'qwen' in model.lower() else '')
         self.system = {'role':'system','content':policy+'\nSelected file: '+json.dumps(self.target)}
         self.question = copy.deepcopy(messages[-1])
@@ -108,11 +111,25 @@ class McpCopilotWorker(QThread):
             try:sock.shutdown(socket.SHUT_RDWR)
             except OSError:pass
 
+    def note_wait(self, operation, limit):
+        self.phase = operation
+        self.wait_context = {'operation':operation, 'limit':limit, 'started':time.monotonic()}
+
+    def timeout_error(self, error):
+        if isinstance(error, McpTimeout):
+            return error
+        if self.started is not None and time.monotonic()-self.started > self.timeout:
+            return McpTimeout(self.phase, 'toplam analiz', self.timeout, time.monotonic()-self.started)
+        context = self.wait_context
+        if context:
+            return McpTimeout(context['operation'], 'ağ bekleme', context['limit'], time.monotonic()-context['started'])
+        return McpTimeout(self.phase, 'toplam analiz', self.timeout, time.monotonic()-self.started)
+
     def check(self):
         if self.stopped.is_set():
             raise McpCancelled('MCP analizi durduruldu.')
         if self.started is not None and time.monotonic()-self.started>self.timeout:
-            raise TimeoutError('Otonom analiz zaman sınırı aşıldı.')
+            raise McpTimeout(self.phase, 'toplam analiz', self.timeout, time.monotonic()-self.started)
         if target_signature(self.target)!=self.signature:
             raise ValueError('Hedef dosya değişti; otonom analiz durduruldu.')
 
@@ -144,8 +161,11 @@ class McpCopilotWorker(QThread):
         self.connection=conn
         calls={};text=[];done=False;finish=None;received=0
         try:
+            self.note_wait('Model sunucusuna bağlantı', 8)
             conn.connect();self.active_socket=conn.sock
-            conn.sock.settimeout(min(90,max(1,self.timeout-(time.monotonic()-self.started))))
+            wait_limit=min(90,max(1,self.timeout-(time.monotonic()-self.started)))
+            conn.sock.settimeout(wait_limit)
+            self.note_wait('Model yanıtı / '+self.model[:80], wait_limit)
             self.check()
             streaming=not (self.provider=='ollama' and bool(tools))
             payload={'model':self.model,'messages':messages,'temperature':self.temperature if streaming else 0,'stream':streaming,'max_tokens':self.max_tokens if streaming else min(512,self.max_tokens)}
@@ -159,6 +179,7 @@ class McpCopilotWorker(QThread):
                 detail=response.read(8192).decode('utf-8','replace')
                 raise RuntimeError('HTTP '+str(response.status)+': '+detail+'\nBu model native araç çağrısını desteklemiyorsa MCP modunu kapatarak normal sohbeti kullanın.')
             if not streaming:
+                self.note_wait('Model araç kararı / '+self.model[:80], wait_limit)
                 raw=response.read(4*1024*1024+1)
                 self.check()
                 if len(raw)>4*1024*1024:raise ValueError('Model yanıtı boyut sınırını aştı.')
@@ -193,6 +214,7 @@ class McpCopilotWorker(QThread):
             lines=[]
             while True:
                 self.check()
+                self.note_wait('Model akışı / '+self.model[:80], wait_limit)
                 raw=response.readline(1048577)
                 received+=len(raw)
                 if len(raw)>1048576 or received>4*1024*1024:
@@ -264,7 +286,14 @@ class McpCopilotWorker(QThread):
                     digest.update(block)
             record['target_sha256']=digest.hexdigest()
             self.log_line.emit('MCP: özel statik analiz oturumu açılıyor…','run')
-            self.client=McpClient(self.rea_bin,self.stopped,self.started+self.timeout)
+            self.phase='MCP bağlantısı'
+            self.client=McpClient(self.rea_bin,self.stopped,self.started+self.timeout,started=self.started)
+            record['timeout_policy']={'overall_seconds':self.timeout, 'tool_seconds':DEFAULT_TOOL_TIMEOUT,
+                                      'ghidra_initial_call_seconds':self.client.ghidra_initial_timeout}
+            self.log_line.emit(
+                'Ghidra ilk analizi için '+str(int(self.client.ghidra_initial_timeout))+
+                ' sn, sonraki araçlar için '+str(DEFAULT_TOOL_TIMEOUT)+
+                ' sn bekleme payı; Durdur her zaman kullanılabilir.', 'info')
             info,inventory=self.client.start();record['server']=info
             router=SelectedTargetTools(self.client,self.target,inventory,self.tool_event.emit,self.max_calls)
             tools=router.definitions()
@@ -279,6 +308,8 @@ class McpCopilotWorker(QThread):
                 record.setdefault('model_input_characters',[]).append(size(messages)+size(active_tools))
                 self.log_line.emit('Copilot MCP turu '+str(turn+1)+' / '+str(self.max_turns),'info')
                 require_tools=not any(e['status']=='ok' and e['requested_by']=='copilot' for e in router.events)
+                self.phase='Model yanıtı / '+self.model[:80]
+                self.wait_context=None
                 text,calls=self.model_round(messages,active_tools,require_tools=require_tools)
                 if not calls:
                     verified=any(e['status']=='ok' and e['requested_by']=='copilot' for e in router.events)
@@ -307,6 +338,8 @@ class McpCopilotWorker(QThread):
                     self.check()
                     try:
                         args=json.loads(call['function']['arguments'])
+                        self.phase='MCP / '+call['function']['name'][:80]
+                        self.wait_context=None
                         result=router.execute(call['function']['name'],args)
                         raw=json.dumps(result_for_model(result),ensure_ascii=False)
                     except (McpCancelled,TimeoutError):raise
@@ -322,6 +355,9 @@ class McpCopilotWorker(QThread):
         except McpCancelled:
             outcome='Durduruldu'
         except Exception as exc:
+            if isinstance(exc, TimeoutError):
+                exc=self.timeout_error(exc)
+                record['timeout']=exc.details()
             error=str(exc)
             if self.api_key:error=error.replace(self.api_key,'[gizli]')
         finally:

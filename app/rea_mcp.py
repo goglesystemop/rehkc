@@ -1,5 +1,7 @@
 """Private, bounded MCP stdio session and a selected-file static tool boundary."""
 import hashlib
+from contextlib import contextmanager
+import re
 import json
 import os
 from pathlib import Path
@@ -8,6 +10,26 @@ import signal
 import stat
 import subprocess
 import time
+
+
+DEFAULT_ANALYSIS_TIMEOUT = 3600
+DEFAULT_TOOL_TIMEOUT = 300
+DEFAULT_GHIDRA_STARTUP_MS = 900000
+GHIDRA_RESPONSE_GRACE = 30
+
+
+class McpTimeout(TimeoutError):
+    """A timeout identifies the actual operation and the budget that expired."""
+    def __init__(self, operation, scope, limit, elapsed):
+        self.operation, self.scope = operation, scope
+        self.limit, self.elapsed = limit, elapsed
+        super().__init__(f"{operation}: {scope} zaman sınırı doldu "
+                         f"(sınır {limit:g} sn, geçen {elapsed:.1f} sn). "
+                         "İşlem durduruldu; araç günlüğündeki tamamlanan sonuçlar korundu.")
+
+    def details(self):
+        return {'operation':self.operation, 'scope':self.scope,
+                'limit_seconds':self.limit, 'elapsed_seconds':round(self.elapsed, 3)}
 
 
 class McpCancelled(Exception):
@@ -53,11 +75,19 @@ def signal_owned(children, sig):
 class McpClient:
     MAX_MESSAGE = 8 * 1024 * 1024
 
-    def __init__(self, binary, stopped, deadline):
+    def __init__(self, binary, stopped, deadline, started=None):
         self.stopped, self.deadline = stopped, deadline
+        self.started = time.monotonic() if started is None else started
+        self.request_context = None
+        self.last_operation = None
+        environment = {k:v for k,v in os.environ.items() if k not in ('BUN_BE_BUN','HOPPER_TARGET_PATH','HOPPER_TARGET_KIND','HOPPER_LOADER_ARGS_JSON')}
+        raw = environment.setdefault('REA_GHIDRA_STARTUP_TIMEOUT_MS', str(DEFAULT_GHIDRA_STARTUP_MS))
+        if not re.fullmatch(r'[1-9]\d*', raw) or int(raw) > 2147483647:
+            raise ValueError('REA_GHIDRA_STARTUP_TIMEOUT_MS, 1..2147483647 arasında milisaniye olmalı.')
+        self.ghidra_initial_timeout = int(raw)/1000 + GHIDRA_RESPONSE_GRACE
         self.process = subprocess.Popen([binary, '--mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, bufsize=0, start_new_session=True,
-            env={k:v for k,v in os.environ.items() if k not in ('BUN_BE_BUN','HOPPER_TARGET_PATH','HOPPER_TARGET_KIND','HOPPER_LOADER_ARGS_JSON')})
+            env=environment)
         self.selector = selectors.DefaultSelector()
         for stream, name in [(self.process.stdout, 'stdout'), (self.process.stderr, 'stderr')]:
             os.set_blocking(stream.fileno(), False)
@@ -72,7 +102,12 @@ class McpClient:
         if self.stopped.is_set() and not ignore_cancel:
             raise McpCancelled('MCP analizi durduruldu.')
         if time.monotonic() > deadline:
-            raise TimeoutError('MCP/otonom analiz zaman sınırı aşıldı.')
+            now = time.monotonic()
+            if not ignore_cancel and self.deadline <= deadline:
+                operation = self.request_context['operation'] if self.request_context else 'MCP analizi / son işlem: '+(self.last_operation or 'başlatma')
+                raise McpTimeout(operation, 'toplam analiz', self.deadline-self.started, now-self.started)
+            context = self.request_context or {'operation':'MCP iletişimi', 'limit':max(0, deadline-now), 'started':now}
+            raise McpTimeout(context['operation'], context.get('scope','araç çağrısı'), context['limit'], now-context['started'])
 
     def write(self, value, deadline, ignore_cancel=False):
         import select
@@ -89,56 +124,74 @@ class McpClient:
             except BlockingIOError:
                 continue
 
-    def notify(self, method, params, timeout=1):
-        self.write({'jsonrpc':'2.0','method':method,'params':params}, time.monotonic()+timeout, True)
+    @contextmanager
+    def request_budget(self, operation, timeout, ignore_cancel=False):
+        started = time.monotonic()
+        deadline = started + timeout
+        if not ignore_cancel:
+            deadline = min(self.deadline, deadline)
+        previous = self.request_context
+        self.request_context = {'operation':operation, 'limit':timeout, 'started':started,
+                                'scope':'iletişim' if ignore_cancel else 'araç çağrısı'}
+        try:
+            yield deadline
+        finally:
+            self.request_context = previous
 
-    def call(self, method, params, timeout=90, ignore_cancel=False):
-        deadline = min(self.deadline, time.monotonic()+timeout) if not ignore_cancel else time.monotonic()+timeout
-        self.next_id += 1
-        identifier = self.next_id
-        self.pending = identifier
-        self.write({'jsonrpc':'2.0','id':identifier,'method':method,'params':params}, deadline, ignore_cancel)
-        while True:
-            self.check(deadline, ignore_cancel)
-            while b'\n' in self.buffer:
-                raw, _, rest = self.buffer.partition(b'\n'); self.buffer = bytearray(rest)
-                if not raw.strip():
-                    continue
-                response = json.loads(raw)
-                if not isinstance(response, dict):
-                    raise ValueError('Geçersiz MCP protokol yanıtı.')
-                if response.get('id') != identifier:
-                    continue
-                self.pending = None
-                if 'error' in response:
-                    raise RuntimeError('MCP: '+str(response['error'])[:1500])
-                if not isinstance(response.get('result'), dict):
-                    raise ValueError('MCP sonuç nesnesi eksik.')
-                return response['result']
-            if len(self.buffer) > self.MAX_MESSAGE:
-                raise ValueError('MCP yanıtı 8 MB sınırını aştı.')
-            for key, _ in self.selector.select(.05):
-                block = os.read(key.fd, 65536)
-                if not block:
-                    self.selector.unregister(key.fileobj)
-                    continue
-                if key.data == 'stderr':
-                    self.stderr.extend(block)
-                    del self.stderr[:-65536]
-                else:
-                    self.buffer.extend(block)
-            if len(self.buffer) > self.MAX_MESSAGE:
-                raise ValueError('MCP yanıtı 8 MB sınırını aştı.')
-            if not self.selector.get_map() or (self.process.poll() is not None and not self.buffer):
-                raise RuntimeError('MCP bağlantısı kesildi: '+self.stderr.decode('utf-8','replace')[-1200:])
+    def notify(self, method, params, timeout=1):
+        with self.request_budget(method, timeout, True) as deadline:
+            self.write({'jsonrpc':'2.0','method':method,'params':params}, deadline, True)
+
+    def call(self, method, params, timeout=DEFAULT_TOOL_TIMEOUT, ignore_cancel=False, operation=None):
+        if operation is None:
+            operation = str(params.get('name', method)) if method == 'tools/call' else method
+        self.last_operation = operation
+        with self.request_budget(operation, timeout, ignore_cancel) as deadline:
+            self.next_id += 1
+            identifier = self.next_id
+            self.pending = identifier
+            self.write({'jsonrpc':'2.0','id':identifier,'method':method,'params':params}, deadline, ignore_cancel)
+            while True:
+                self.check(deadline, ignore_cancel)
+                while b'\n' in self.buffer:
+                    raw, _, rest = self.buffer.partition(b'\n'); self.buffer = bytearray(rest)
+                    if not raw.strip():
+                        continue
+                    response = json.loads(raw)
+                    if not isinstance(response, dict):
+                        raise ValueError('Geçersiz MCP protokol yanıtı.')
+                    if response.get('id') != identifier:
+                        continue
+                    self.pending = None
+                    if 'error' in response:
+                        raise RuntimeError('MCP: '+str(response['error'])[:1500])
+                    if not isinstance(response.get('result'), dict):
+                        raise ValueError('MCP sonuç nesnesi eksik.')
+                    return response['result']
+                if len(self.buffer) > self.MAX_MESSAGE:
+                    raise ValueError('MCP yanıtı 8 MB sınırını aştı.')
+                for key, _ in self.selector.select(.05):
+                    block = os.read(key.fd, 65536)
+                    if not block:
+                        self.selector.unregister(key.fileobj)
+                        continue
+                    if key.data == 'stderr':
+                        self.stderr.extend(block)
+                        del self.stderr[:-65536]
+                    else:
+                        self.buffer.extend(block)
+                if len(self.buffer) > self.MAX_MESSAGE:
+                    raise ValueError('MCP yanıtı 8 MB sınırını aştı.')
+                if not self.selector.get_map() or (self.process.poll() is not None and not self.buffer):
+                    raise RuntimeError('MCP bağlantısı kesildi: '+self.stderr.decode('utf-8','replace')[-1200:])
 
     def start(self):
         info = self.call('initialize', {'protocolVersion':'2025-11-25','capabilities':{},
-            'clientInfo':{'name':'rea-copilot','version':'1'}}, timeout=15)
+            'clientInfo':{'name':'rea-copilot','version':'1'}}, timeout=30)
         self.notify('notifications/initialized', {})
         tools, cursor = {}, None
         for _ in range(4):
-            result = self.call('tools/list', {} if cursor is None else {'cursor':cursor}, timeout=15)
+            result = self.call('tools/list', {} if cursor is None else {'cursor':cursor}, timeout=30)
             if not isinstance(result.get('tools'), list):
                 raise ValueError('MCP araç listesi geçersiz.')
             for item in result['tools']:
@@ -202,6 +255,7 @@ class SelectedTargetTools:
         self.max_calls = max_calls
         self.events = []
         self.ready = False
+        self.ghidra_initialized = False
         self.available = {name for name in SCHEMAS if name in inventory}
         if not os.environ.get('REA_PWNTOOLS_PYTHON'):
             self.available.discard('inspect_binary_layout')
@@ -219,12 +273,14 @@ class SelectedTargetTools:
             raise ValueError('Hedef dosya değişti; MCP analizi durduruldu.')
         self.client.check(self.client.deadline)
 
-    def record(self, name, arguments, requested_by, operation):
+    def record(self, name, arguments, requested_by, operation, phase=None, timeout=None):
         self.check()
         if self.calls >= self.max_calls:
             raise ValueError('MCP araç çağrısı bütçesi tükendi.')
         self.calls += 1
         event = {'id':'tool-'+str(self.calls),'tool':str(name),'arguments':arguments if isinstance(arguments,dict) else {'invalid_arguments':str(arguments)[:2000]},'requested_by':requested_by,'status':'running'}
+        if phase is not None:event['phase'] = phase
+        if timeout is not None:event['timeout_seconds'] = timeout
         self.emit(dict(event))
         started = time.monotonic()
         try:
@@ -250,9 +306,10 @@ class SelectedTargetTools:
             event.update(output=raw[:131072], output_truncated=len(raw)>131072,
                          output_sha256=hashlib.sha256(raw.encode()).hexdigest())
             return result
-        except (McpCancelled, TimeoutError):
+        except (McpCancelled, TimeoutError) as exc:
             event['status']='cancelled' if self.client.stopped.is_set() else 'error'
-            event['error']='İşlem durduruldu veya zaman sınırı aşıldı.'
+            event['error']=str(exc)
+            if isinstance(exc, McpTimeout):event['timeout'] = exc.details()
             raise
         except Exception as exc:
             event.update(status='error', error=str(exc)[:2000])
@@ -263,6 +320,10 @@ class SelectedTargetTools:
             self.emit(dict(event))
 
     def execute(self, name, arguments):
+        uses_ghidra = name not in ('inspect_with_objdump','inspect_binary_layout')
+        initial = uses_ghidra and not self.ghidra_initialized
+        timeout = self.client.ghidra_initial_timeout if initial else DEFAULT_TOOL_TIMEOUT
+        phase = 'Ghidra ilk analiz' if initial else 'Ghidra' if uses_ghidra else 'statik araç'
         def operation():
             if name not in self.available:
                 raise ValueError('Bu araç statik analiz kapsamında izinli değil: '+str(name)[:80])
@@ -291,14 +352,18 @@ class SelectedTargetTools:
                     # Mark as opened before requesting so cancellation still attempts provider cleanup.
                     self.client.opened = True
                     opened = self.record('open_binary', {'path':self.path,'provider_id':'ghidra'}, 'prerequisite',
-                        lambda:self.client.call('tools/call', {'name':'open_binary','arguments':{'path':self.path,'provider_id':'ghidra'}}, timeout=120))
+                        lambda:self.client.call('tools/call', {'name':'open_binary','arguments':{'path':self.path,'provider_id':'ghidra'}}, timeout=self.client.ghidra_initial_timeout, operation='Ghidra ilk analiz / open_binary'),
+                        phase='Ghidra ilk analiz', timeout=self.client.ghidra_initial_timeout)
                     if self.events[-1]['status']!='ok':
                         return opened
                     self.ready=True
                 if name=='search_strings':
                     args.update(mode='literal',case_sensitive=False)
-            return self.client.call('tools/call', {'name':name,'arguments':args}, timeout=90)
-        return self.record(name, arguments, 'copilot', operation)
+            result = self.client.call('tools/call', {'name':name,'arguments':args}, timeout=timeout, operation=phase+' / '+name)
+            if uses_ghidra and not result.get('isError') and not (isinstance(result.get('structuredContent'),dict) and result['structuredContent'].get('ok') is False):
+                self.ghidra_initialized = True
+            return result
+        return self.record(name, arguments, 'copilot', operation, phase=phase, timeout=timeout)
 
 
 def validate_runs(runs):

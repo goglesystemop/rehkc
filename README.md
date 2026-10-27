@@ -50,7 +50,7 @@ Python’da bu destek yoksa aşağıdaki sürüm arşivi yöntemi kullanılabili
 ~/.local/bin/rehkc
 ```
 
-0.2.1 sürümü için ilk komut `REHKC 0.2.1 / REA 6.7.0` yazmalı;
+0.2.2 sürümü için ilk komut `REHKC 0.2.2 / REA 6.7.0` yazmalı;
 motor durumunda `"managed": true` ve sağlık bölümünde `"ok": true` görünmelidir.
 Sonraki açılışlarda uygulama menüsündeki **REHKC** simgesini kullanabilirsiniz.
 Haftalık güncelleme kontrolü uygulama açıkken otomatik yapılır; elle kontrol için:
@@ -98,7 +98,7 @@ aynı kurucu resmî, hash ile sabitlenmiş motor grubunu kullanıcıya özel kur
 ~/.local/bin/rehkc
 ```
 
-Sürüm `REHKC 0.2.1 / REA 6.7.0`, motor sağlığı `"ok": true` olmalıdır.
+Sürüm `REHKC 0.2.2 / REA 6.7.0`, motor sağlığı `"ok": true` olmalıdır.
 Sonrasında menüdeki **REHKC** simgesini kullanabilirsiniz. İki dağıtım ailesi de
 aynı kurucuyu, motorları ve haftalık güncelleme kontrolünü kullanır.
 
@@ -115,12 +115,12 @@ masaüstü testinin yapıldığı anlamına gelmez.
 ### Sürüm arşivinden kurulum
 
 [Releases](https://github.com/goglesystemop/rehkc/releases) sayfasından
-`rehkc-0.2.1-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
+`rehkc-0.2.2-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
 
 ```sh
 sha256sum -c SHA256SUMS
-tar -xzf rehkc-0.2.1-linux-x86_64.tar.gz
-cd rehkc-0.2.1-linux-x86_64
+tar -xzf rehkc-0.2.2-linux-x86_64.tar.gz
+cd rehkc-0.2.2-linux-x86_64
 ./install.sh --check
 ./install.sh
 ```
@@ -153,6 +153,8 @@ Kurucu Ghidra, uyumlu JDK, Radare2 ve RetDec'i kullanıcıya özel kurar. Haftal
 sürüm ve bağımlılık kontrolü yapar; doğrulanmış motor grupları menüden
 güncellenebilir. [Motor kurulumu ve güncellemeler](docs/ANALYSIS-TOOLS.md).
 Model sunucuları ve model dosyaları ayrıca kurulur.
+MCP/Ghidra ilk analiz süreleri, durdurma ve hata ayrıntıları:
+[MCP analiz süreleri](docs/MCP-ANALYSIS.md).
 Küçük yerel modeller gerçek araç çıktısını yanlış yorumlayabilir; yorum ile
 Ghidra/MCP kanıtını aynı şey saymayın.
 

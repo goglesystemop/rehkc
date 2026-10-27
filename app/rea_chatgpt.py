@@ -306,7 +306,9 @@ def cloud_tools(tools):
 
 class ResponsesTransport:
     def model_round(self,messages,tools,require_tools=False):
-        self.check();token=self.store.token(self.account_id);self.check()
+        self.check()
+        if hasattr(self,'note_wait'):self.note_wait('ChatGPT oturum doğrulaması',15)
+        token=self.store.token(self.account_id);self.check()
         instructions,items=response_input(messages,self.native_groups)
         payload={'model':self.model,'instructions':instructions,'input':items,'store':False,'stream':True,'include':['reasoning.encrypted_content']}
         if tools:payload.update(tools=cloud_tools(tools),tool_choice='required' if require_tools else 'auto')
@@ -314,7 +316,11 @@ class ResponsesTransport:
         conn=http.client.HTTPSConnection('api.openai.com',timeout=8);self.connection=conn
         text=[];terminal=False;output=[];completed_items={}
         try:
-            conn.connect();self.active_socket=conn.sock;self.active_socket.settimeout(min(90,max(1,self.timeout-(time.monotonic()-self.started))))
+            if hasattr(self,'note_wait'):self.note_wait('ChatGPT bağlantısı',8)
+            conn.connect();self.active_socket=conn.sock
+            wait_limit=min(90,max(1,self.timeout-(time.monotonic()-self.started)))
+            self.active_socket.settimeout(wait_limit)
+            if hasattr(self,'note_wait'):self.note_wait('ChatGPT yanıtı / '+self.model[:80],wait_limit)
             self.check();conn.request('POST','/v1/responses',json.dumps(payload).encode(),{'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'text/event-stream'})
             response=conn.getresponse();self.connection_received.emit('Bağlı' if response.status==200 else 'HTTP '+str(response.status))
             if response.status!=200:
@@ -328,7 +334,9 @@ class ResponsesTransport:
             # response.completed event below are still required before any tool executes.
             received=0;lines=[]
             while True:
-                self.check();raw=response.readline(1048577);received+=len(raw)
+                self.check()
+                if hasattr(self,'note_wait'):self.note_wait('ChatGPT akışı / '+self.model[:80],wait_limit)
+                raw=response.readline(1048577);received+=len(raw)
                 if len(raw)>1048576 or received>4*1024*1024:raise ValueError('ChatGPT akış boyut sınırı aşıldı.')
                 if not raw:break
                 line=raw.decode().rstrip('\r\n')

@@ -3753,7 +3753,12 @@ class ReaMainWindow(QMainWindow):
             run["events"][old] = dict(event)
         if worker is self.ai_worker and worker.target_context == self._analysis_target_context():
             import html
-            self.lbl_mcp_status.setText("MCP: " + event["tool"] + " · " + event["status"])
+            phase = event.get("phase", "")
+            status_text = phase if event["status"] == "running" and phase else event["status"]
+            self.lbl_mcp_status.setText("MCP: " + event["tool"] + " · " + status_text)
+            if event["status"] == "running" and phase == "Ghidra ilk analiz":
+                self.append_log("Ghidra ilk analizi hazırlanıyor: " + html.escape(event["tool"]) +
+                    " · bekleme payı " + str(int(event["timeout_seconds"])) + " sn. Durdur kullanılabilir.", "info")
             self.lbl_ai_status.setText("MCP çalışıyor…")
             self.append_log("MCP " + html.escape(event["tool"]) + " · " + event["status"], "run" if event["status"] == "running" else "success" if event["status"] == "ok" else "warn")
         self._trim_mcp_history()
