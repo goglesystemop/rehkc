@@ -74,6 +74,9 @@ def main():
         run(stage/'runtime/python/bin/python3', ROOT/'tests/test_analysis_sessions.py')
         run(stage/'runtime/python/bin/python3', ROOT/'tests/test_analysis_progress.py')
         run(stage/'runtime/python/bin/python3', ROOT/'tests/test_code_export.py')
+        run(stage/'runtime/python/bin/python3', ROOT/'tests/test_copilot_repetition.py')
+        run(stage/'runtime/python/bin/python3', ROOT/'tests/test_saved_code.py')
+        run(stage/'runtime/python/bin/python3', ROOT/'tests/test_function_picker.py')
         run(sys.executable, 'tests/test_distribution.py', '--package', stage)
         run(sys.executable, 'tests/test_managed_engines_live.py', '--package', stage, '--report', work/'managed-engines.json')
         run(stage/'run', '--smoke-test', '--report', work/'smoke.json',

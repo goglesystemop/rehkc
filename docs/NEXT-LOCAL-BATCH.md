@@ -1,5 +1,8 @@
 # 0.3.0 için tamamlanan geliştirme grubu
 
+0.3.0 yayımlandı. Sonraki yerel grubun öncelikleri ve kapsamı:
+[Yerel analiz iş akışı](LOCAL-WORKFLOW-BATCH.md).
+
 Öncelikler ve kapsam:
 
 1. Temel string/güvenlik araçlarının ortak motor düzenlemesinden kalan
