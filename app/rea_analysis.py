@@ -24,6 +24,16 @@ MAX_TARGET = 512 * 1024 * 1024
 MAX_RESULT = 8 * 1024 * 1024
 
 
+class NativeTimeout(TimeoutError):
+    def __init__(self, operation, limit, elapsed):
+        self.operation,self.limit,self.elapsed=operation,limit,elapsed
+        super().__init__(f'{operation}: native araç çağrısı zaman sınırı doldu (sınır {limit:g} sn, geçen {elapsed:.1f} sn).')
+
+    def details(self):
+        return {'operation':self.operation,'scope':'native araç çağrısı',
+                'limit_seconds':self.limit,'elapsed_seconds':round(self.elapsed,3)}
+
+
 def signature(path):
     s = Path(path).stat()
     import stat
@@ -197,7 +207,7 @@ class StaticAnalysis:
                 result['limitations'].append('Kod paketlenmiş/korumalı olabilir. Çözülen kod yalnız yükleyici olabilir; asıl programın çözüldüğü iddia edilmemeli.')
         self.unchanged();return result
 
-    def command(self, args, timeout=45, env=None):
+    def command(self, args, timeout=45, env=None, operation=None):
         self.check()
         with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
             command=[sys.executable,'-I','-B',str(Path(__file__).with_name('rea_native_guard.py')),
@@ -207,7 +217,8 @@ class StaticAnalysis:
             try:
                 while p.poll() is None:
                     self.check()
-                    if time.monotonic()-started>timeout:raise TimeoutError(f'{Path(args[0]).name}: işlem zaman sınırı {timeout} sn doldu.')
+                    if time.monotonic()-started>timeout:
+                        raise NativeTimeout(operation or Path(args[0]).name,timeout,time.monotonic()-started)
                     if os.fstat(out.fileno()).st_size>MAX_RESULT or os.fstat(err.fileno()).st_size>1024**2:raise ValueError('Motor çıktı sınırı aşıldı.')
                     time.sleep(.03)
                 self.unchanged();out.seek(0);err.seek(0)
@@ -252,7 +263,8 @@ class StaticAnalysis:
     def assembly(self, procedure, pseudo=False):
         address=self.address(procedure)
         query=f'af @ {hex(address)};'+(f'pdc @ {hex(address)}' if pseudo else f'pdj 256 @ {hex(address)}')
-        text=self.command([self.executable('radare2'),'-N','-2','-q','-e','scr.color=0','-c',query,self.path],timeout=60)
+        text=self.command([self.executable('radare2'),'-N','-2','-q','-e','scr.color=0','-c',query,self.path],timeout=60,
+                          operation='Radare2 / seçili '+('sözde kod' if pseudo else 'assembly'))
         if not text.strip():raise ValueError('Radare2 seçili adreste çıktı üretmedi.')
         if pseudo and not re.search(r'\)\s*\{',text):raise ValueError('Radare2 sözde kod gövdesi üretmedi.')
         return evidence('radare2', 'procedure_pseudo_code' if pseudo else 'procedure_assembly',text,
@@ -280,7 +292,7 @@ class StaticAnalysis:
                 limitations.append('Adres seçimi en fazla 4096 bayt; tüm fonksiyonun kurtarıldığı garanti edilmez.')
             elif re.fullmatch(r'[A-Za-z_?$@.][A-Za-z0-9_?$@.:]{0,255}',procedure):args+=['--select-functions',procedure]
             else:raise ValueError('Geçersiz fonksiyon adı/adresi.')
-            self.command([*args,self.path],timeout=200)
+            self.command([*args,self.path],timeout=200,operation='RetDec / seçili fonksiyon')
             if not output.is_file() or output.stat().st_size>MAX_RESULT:raise ValueError('RetDec C çıktısı yok veya çok büyük.')
             code=output.read_text(errors='replace')
             if not re.search(r'\)\s*\{',code):raise ValueError('RetDec fonksiyon gövdesi üretmedi.')

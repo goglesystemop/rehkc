@@ -147,6 +147,14 @@ class StagedAnalysis(unittest.TestCase):
         memory,cpu,core=json.loads(raw)
         self.assertLessEqual(memory[1],4*1024**3);self.assertGreaterEqual(memory[1],256*1024**2)
         self.assertEqual(cpu,[8,8]);self.assertEqual(core,[0,0])
+    def test_worker_preserves_native_tool_timeout_instead_of_claiming_total(self):
+        from rea_copilot import McpCopilotWorker
+        worker=McpCopilotWorker('http://localhost:1234','','test',[{'role':'user','content':'test'}],self.target,str(self.target))
+        worker.started=time.monotonic()
+        error=analysis.NativeTimeout('Radare2 / seçili assembly',60,60.1)
+        self.assertIs(worker.timeout_error(error),error)
+        self.assertEqual(error.details()['scope'],'native araç çağrısı')
+        self.assertEqual(error.details()['limit_seconds'],60)
     def test_low_memory_skips_ghidra_before_open(self):
         r=self.router()
         with patch.object(mcp,'memory_policy',return_value={'available_bytes':128*1024**2}),patch.object(r.analysis,'fallback',return_value=analysis.evidence('radare2','list_procedures',[],['partial'])) as fallback:

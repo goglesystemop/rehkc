@@ -11,6 +11,7 @@ import time
 import uuid
 from urllib.parse import urlsplit
 from PyQt5.QtCore import QThread, pyqtSignal
+from rea_analysis import NativeTimeout
 from rea_mcp import (McpClient, McpCancelled, McpTimeout, SelectedTargetTools, SCHEMAS,
                      target_signature, DEFAULT_ANALYSIS_TIMEOUT, DEFAULT_TOOL_TIMEOUT)
 
@@ -121,7 +122,7 @@ class McpCopilotWorker(QThread):
         self.wait_context = {'operation':operation, 'limit':limit, 'started':time.monotonic()}
 
     def timeout_error(self, error):
-        if isinstance(error, McpTimeout):
+        if isinstance(error, (McpTimeout, NativeTimeout)):
             return error
         if self.started is not None and time.monotonic()-self.started > self.timeout:
             return McpTimeout(self.phase, 'toplam analiz', self.timeout, time.monotonic()-self.started)
