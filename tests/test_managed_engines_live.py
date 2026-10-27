@@ -61,9 +61,15 @@ with tempfile.TemporaryDirectory(prefix='rehkc-managed-live-') as temporary:
     adapter.write_text('#!/bin/sh\nexec '+shlex.quote(str(launcher))+' --engine "$@"\n')
     adapter.chmod(0o755)
     staged_report = base/'staged.json'
+    assembly = base/'retdec-probe.s'
+    assembly.write_text('.text\n.globl _start\n_start:\n lea (%rdi,%rdi,2), %rax\n add %rsi, %rax\n ret\n')
+    obj = base/'retdec-probe.o'
+    retdec_target = base/'retdec-probe.elf'
+    run('/usr/bin/as','--64',assembly,'-o',obj)
+    run('/usr/bin/ld','-Ttext=0x401000','-e','_start',obj,'-o',retdec_target)
     run(package/'runtime/python/bin/python3', Path(__file__).with_name('staged_live_probe.py'),
         '--package', prefix/'current', '--engine', adapter, '--target', target,
-        '--procedure', '0x400078', '--report', staged_report, timeout=600,
+        '--procedure', '0x400078', '--report', staged_report, '--retdec-target', retdec_target, timeout=600,
         extra_env={'REHKC_INSTALL_ROOT':str(prefix)})
     result['staged_analysis'] = json.loads(staged_report.read_text())
     # Reinstall is idempotent and a second dependency check remains valid.

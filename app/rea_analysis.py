@@ -264,7 +264,9 @@ class StaticAnalysis:
             raise ValueError('RetDec için kullanılabilir bellek 512 MiB altında; hızlı Radare2 incelemesini kullanın.')
         with tempfile.TemporaryDirectory(prefix='rehkc-retdec-') as temporary:
             output=Path(temporary)/'selected.c'
-            args=[self.executable('retdec-decompiler'),'--timeout','180','--max-memory',str(memory_policy()['native_memory_bytes']),
+            # The guard already sets a hard address-space limit. RetDec's own
+            # limiter tries to raise inherited limits and fails under a hard cap.
+            args=[self.executable('retdec-decompiler'),'--timeout','180','--no-memory-limit',
                   '--cleanup','--backend-no-time-varying-info','--select-decode-only','-o',str(output)]
             limitations=['Seçici RetDec analizi; özgün kaynak kod değildir. Seçili aralık/fonksiyon dışındaki kod analiz edilmedi.']
             if re.fullmatch(r'0x[0-9a-fA-F]{1,16}',procedure):

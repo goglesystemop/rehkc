@@ -53,7 +53,9 @@ analiz süresi dolduktan sonra başka motor başlatılmaz.
 Ghidra heap bütçesi kullanılabilir RAM/cgroup payının yaklaşık üçte biri,
 256–4096 MiB aralığıdır. Açık `GHIDRA_HEADLESS_MAXMEM`/`GHIDRA_MAXMEM` korunur.
 768 MiB altında yeni Ghidra JVM'si başlatılmaz; RetDec 512 MiB altında atlanır.
-RetDec kendi bellek ve süre sınırlarıyla çalışır. Native yardımcılar ayrıca ayrı
+RetDec kendi süre sınırıyla, belleği ise dış süreçten uygulanan sert sınırla çalışır.
+İç bellek sınırlayıcısının miras alınan sert sınırı yükseltmeye çalışmaması için
+RetDec `--no-memory-limit` alır; bu dış bellek sınırını kaldırmaz. Native yardımcılar ayrıca ayrı
 çocuk süreçte adres alanı/CPU sınırıyla başlatılır; Qt iş parçacığında preexec_fn
 kullanılmaz. Çekirdek dökümleri kapalıdır. Bu ölçümler diğer süreçlerin
 sonradan bellek tüketmesini engellemez. Ghidra süreleri önceki politikadaki gibi

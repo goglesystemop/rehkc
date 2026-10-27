@@ -14,6 +14,7 @@ p.add_argument('--engine',required=True)
 p.add_argument('--target',required=True,type=Path)
 p.add_argument('--procedure',required=True)
 p.add_argument('--report',required=True,type=Path)
+p.add_argument('--retdec-target',type=Path)
 a=p.parse_args()
 sys.path.insert(0,str(a.package.resolve()/'app'))
 import rehkc_boot
@@ -54,6 +55,13 @@ try:
                         'limitations':value['limitations'],'failures':value['fallback_from']}
 finally:client.close()
 report['radare_assembly_engine']=observation(service.assembly(a.procedure))['engine']
+if a.retdec_target:
+    # A well-formed generated ELF gives RetDec an independent positive test.
+    # Merely accepting Radare2 fallback would hide a broken RetDec adapter.
+    retdec=StaticAnalysis(a.retdec_target).retdec('0x401000')
+    value=observation(retdec)
+    assert value['engine']=='retdec' and value['observed_result'].strip()
+    report['retdec_positive_test']=True
 report['target_unchanged']=hashlib.sha256(a.target.read_bytes()).hexdigest()==before
 assert report['target_unchanged']
 report['ok']=True

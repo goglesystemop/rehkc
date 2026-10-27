@@ -159,6 +159,8 @@ class StagedAnalysis(unittest.TestCase):
         with patch.object(s,'executable',return_value='/retdec'),patch.object(s,'command',side_effect=command):
             result=s.retdec('0x401000')
         self.assertIn('--select-decode-only',observed);self.assertIn('0x401000-0x4011ff',observed)
+        self.assertIn('--no-memory-limit',observed)  # External hard cap remains active; no conflicting internal cap.
+        self.assertNotIn('--max-memory',observed)
         self.assertTrue(result['structuredContent']['partial'])
         with self.assertRaises(ValueError):s.retdec('main;!touch bad')
     def test_empty_ghidra_code_tries_another_engine(self):

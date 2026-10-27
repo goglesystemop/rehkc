@@ -1770,7 +1770,7 @@ class ReaMainWindow(QMainWindow):
         btn_disasm.clicked.connect(self.action_disassemble)
         actions_layout.addWidget(btn_disasm)
 
-        btn_decompile = QPushButton("Decompile (Ghidra)")
+        btn_decompile = QPushButton("Decompile (Otomatik)")
         btn_decompile.setProperty("class", "action")
         btn_decompile.clicked.connect(self.action_decompile)
         actions_layout.addWidget(btn_decompile)
@@ -1793,7 +1793,7 @@ class ReaMainWindow(QMainWindow):
         menu_more = QMenu(self)
 
         menu_decomp = menu_more.addMenu("Decompilation Engines")
-        menu_decomp.addAction("Decompile with Ghidra", self.action_decompile)
+        menu_decomp.addAction("Decompile (Ghidra → RetDec → Radare2)", self.action_decompile)
         menu_decomp.addAction("Decompile with RetDec", self.action_retdec)
         menu_decomp.addAction("Analyze with Radare2", self.action_radare2)
         menu_decomp.addAction("Analiz önbelleğini temizle", self.action_clear_analysis_cache)
@@ -2963,11 +2963,18 @@ class ReaMainWindow(QMainWindow):
                 if observed is None:
                     raise ValueError("Motor kullanılabilir sonuç üretmedi.")
                 text = observed if isinstance(observed, str) else json.dumps(observed, ensure_ascii=False, indent=2)
-                notes = value.get("limitations", [])
+                notes = list(value.get("limitations", [])) if value.get("engine") else []
+                indicators = result.get("preflight", {}).get("packer_indicators", [])
+                if indicators:
+                    notes.insert(0, "Paketleyici/koruma işaretleri: " + ", ".join(indicators) +
+                        ". Bu kod yalnız yükleyiciye ait olabilir; asıl programın kurtarıldığı anlamına gelmez.")
                 if result.get("cache_hit"):
                     notes = ["Önbellek: aynı dosya ve motor ayarları."] + notes
                 if value.get("fallback_from"):
-                    notes = ["Alternatif motor kullanıldı: " + json.dumps(value["fallback_from"], ensure_ascii=False)] + notes
+                    notes = [str(failure.get("engine", "Motor")) + ": " +
+                        str(failure.get("error", "hata")).splitlines()[0][:180]
+                        for failure in value["fallback_from"]] + notes
+                    notes.append("Alternatif motor kullanıldı; hata ayrıntıları Tool Output sekmesinde.")
                 text = "/* " + str(engine) + " — statik analiz; özgün kaynak kod değildir */\n" + "\n".join(notes) + "\n\n" + text
                 editor = self.tab_disasm if command_id == "radare2" else self.tab_decomp
                 editor.setPlainText(text)
@@ -3123,7 +3130,7 @@ class ReaMainWindow(QMainWindow):
         import re
         selected = self._active_search_editor().textCursor().selectedText().strip()
         default = selected if re.fullmatch(r"(?:0x[0-9a-fA-F]+|[A-Za-z_][\w:.$@]*)", selected) else "main"
-        procedure, accepted = QInputDialog.getText(self, "Ghidra ile decompile",
+        procedure, accepted = QInputDialog.getText(self, "Otomatik motorla decompile",
             "Fonksiyon adı veya adresi (ör. main veya 0x401146):\nSembol adı olmayan dosyada adres kullanın.", QLineEdit.Normal, default)
         if not accepted:
             return
