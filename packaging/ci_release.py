@@ -64,6 +64,7 @@ def main():
         run(sys.executable, 'packaging/build_release.py', '--engine', vendor_root/'app/rea.bin',
             '--assets', vendor_root/'app', '--stage', stage, '--output', output)
         run(sys.executable, 'tests/test_tool_environment.py')
+        run(sys.executable, 'tests/test_system_dependencies.py')
         run(stage/'runtime/python/bin/python3', ROOT/'tests/test_managed_tools.py')
         run(stage/'runtime/python/bin/python3', ROOT/'tests/test_tool_ui.py')
         run(sys.executable, 'tests/test_distribution.py', '--package', stage)

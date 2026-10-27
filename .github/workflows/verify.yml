@@ -16,6 +16,44 @@ jobs:
       - name: Install desktop and Java runtime system libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libglib2.0-0t64 libgl1 libegl1 libxkbcommon-x11-0 libxcb-shape0 libxcb-xinerama0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxrender1 libxi6 libxrandr2 libxfixes3 libfontconfig1 libdbus-1-3 libx11-xcb1 libxext6 libxtst6 libstdc++6 zlib1g binutils xdg-utils
+          python3 - <<'PYCI'
+          import installer, subprocess
+          from unittest.mock import patch
+          run = subprocess.run
+          def confirm(command, **kwargs):
+              return run(command, input='y\n' * 100, text=True, **kwargs)
+          with patch.object(installer.subprocess, 'run', side_effect=confirm):
+              installer.install_system_dependencies()
+          PYCI
       - name: Build and verify without publishing
         run: python3 packaging/ci_release.py --work-dir "$RUNNER_TEMP/rehkc-verify" --build-only
+
+  arch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: archlinux:base@sha256:52dfbd5afb23a220d5ee92dafcb4c788d96c026ed04179890c23adef4c897fa0
+    steps:
+      - name: Bootstrap Arch test interpreter
+        run: pacman -Syu --noconfirm --needed python git
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install real system dependencies through the installer
+        run: |
+          python -c 'import installer; assert installer.dependency_manager() == "pacman"'
+          python - <<'PYCI'
+          import installer, subprocess
+          from unittest.mock import patch
+          run = subprocess.run
+          def confirm(command, **kwargs):
+              return run(command, input='y\n' * 100, text=True, **kwargs)
+          with patch.object(installer.subprocess, 'run', side_effect=confirm):
+              installer.install_system_dependencies()
+          PYCI
+      - name: Create an unprivileged desktop test user
+        run: |
+          useradd --create-home --shell /bin/bash rehkc-test
+          chown -R rehkc-test:rehkc-test "$GITHUB_WORKSPACE"
+      - name: Build and verify managed engines on Arch
+        run: runuser -u rehkc-test -- python packaging/ci_release.py --work-dir /tmp/rehkc-arch-verification --build-only

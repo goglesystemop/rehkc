@@ -50,7 +50,7 @@ Python’da bu destek yoksa aşağıdaki sürüm arşivi yöntemi kullanılabili
 ~/.local/bin/rehkc
 ```
 
-0.2.0 sürümü için ilk komut `REHKC 0.2.0 / REA 6.7.0` yazmalı;
+0.2.1 sürümü için ilk komut `REHKC 0.2.1 / REA 6.7.0` yazmalı;
 motor durumunda `"managed": true` ve sağlık bölümünde `"ok": true` görünmelidir.
 Sonraki açılışlarda uygulama menüsündeki **REHKC** simgesini kullanabilirsiniz.
 Haftalık güncelleme kontrolü uygulama açıkken otomatik yapılır; elle kontrol için:
@@ -62,20 +62,65 @@ Haftalık güncelleme kontrolü uygulama açıkken otomatik yapılır; elle kont
 LM Studio/Ollama ve model dosyaları ayrıca kurulur. Ayrıntılar:
 [Kurulum](docs/INSTALL.md), [Motor kurulumu ve güncellemeler](docs/ANALYSIS-TOOLS.md).
 
-**Arch / CachyOS / Manjaro:** Yukarıdaki `apt` komutları bu dağıtımlar için
-değildir. 0.2.0’daki `--install-system-deps` yalnız `apt-get` destekler;
-`pacman` ile otomatik sistem bağımlılığı kurulumu henüz yoktur. Bu dağıtımlarda
-REHKC’nin çalışması henüz gerçek kurulum testiyle doğrulanmadı.
+### Arch / CachyOS / Manjaro: GitHub’dan temiz kurulum
+
+Pacman desteği **0.2.1** sürümünde bulunur; eski 0.2.0 arşivinde yoktur.
+64-bit x86_64, glibc >= 2.34, internet ve yukarıdaki boş alan koşulları geçerlidir.
+
+**1. Sistemi güncelleyin ve indirme araçlarını kurun:**
+
+```sh
+sudo pacman -Syu --needed git python ca-certificates
+```
+
+**2. Aynı depoyu indirin ve kurucuyu çalıştırın:**
+
+```sh
+git clone https://github.com/goglesystemop/rehkc.git
+cd rehkc
+./install.sh --install-system-deps
+```
+
+Kurucu `/etc/os-release` bilgisinden Arch ailesini tanır; sistem kitaplıklarını,
+X11/Wayland bağımlılıklarını, yazı tiplerini ve binutils araçlarını
+`sudo pacman -Syu --needed ...` ile kurar. `-Syu` sistemin tamamı için güncelleme
+yapabilir; pacman işlem listesini ve onayını gösterir. Paket kurulumu başarısız
+olursa uygulama kurulumu devam etmez. Kurucuyu ayrıca sudo ile çalıştırmayın.
+
+Ghidra, JDK, RetDec ve Radare2 için ayrı Arch/AUR paketi kurmanız gerekmez;
+aynı kurucu resmî, hash ile sabitlenmiş motor grubunu kullanıcıya özel kurar.
+
+**3. Kontrol edin ve açın:**
+
+```sh
+~/.local/bin/rehkc --version
+~/.local/bin/rehkc --tools status
+~/.local/bin/rehkc
+```
+
+Sürüm `REHKC 0.2.1 / REA 6.7.0`, motor sağlığı `"ok": true` olmalıdır.
+Sonrasında menüdeki **REHKC** simgesini kullanabilirsiniz. İki dağıtım ailesi de
+aynı kurucuyu, motorları ve haftalık güncelleme kontrolünü kullanır.
+
+Dağıtım seçimini ve paket listesini kurulum yapmadan görmek için her iki ailede:
+
+```sh
+./install.sh --print-system-deps
+```
+
+GitHub kontrolü Arch kapsayıcısında gerçek pacman bağımlılık kurulumu ve analiz
+motoru testlerini çalıştırır. Bu, CachyOS/Manjaro üzerinde gerçek KDE/Wayland
+masaüstü testinin yapıldığı anlamına gelmez.
 
 ### Sürüm arşivinden kurulum
 
 [Releases](https://github.com/goglesystemop/rehkc/releases) sayfasından
-`rehkc-0.2.0-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
+`rehkc-0.2.1-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
 
 ```sh
 sha256sum -c SHA256SUMS
-tar -xzf rehkc-0.2.0-linux-x86_64.tar.gz
-cd rehkc-0.2.0-linux-x86_64
+tar -xzf rehkc-0.2.1-linux-x86_64.tar.gz
+cd rehkc-0.2.1-linux-x86_64
 ./install.sh --check
 ./install.sh
 ```
@@ -88,7 +133,7 @@ Sistem kitaplığı eksikse:
 
 ```sh
 ./install.sh --print-system-deps
-# Debian/Ubuntu/Mint'te yalnız listelenen gerekli kitaplıkları kurmak için:
+# Debian/Arch ailesinde uygun paket yöneticisiyle kurmak için:
 ./install.sh --install-system-deps
 ```
 

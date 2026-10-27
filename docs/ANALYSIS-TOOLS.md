@@ -16,15 +16,15 @@ Kaynak: [Ghidra 12.2 gereksinimleri](https://github.com/NationalSecurityAgency/g
 
 ```sh
 ./install.sh
-# Sistem masaüstü kitaplıkları/binutils eksikse Debian/Ubuntu/Mint üzerinde:
+# Sistem masaüstü kitaplıkları/binutils eksikse Debian/Ubuntu/Mint veya Arch/CachyOS/Manjaro üzerinde:
 ./install.sh --install-system-deps
 ```
 
 Motorlar için ilk kurulumda internet ve en az 5 GiB boş alan gerekir.
 İndirilecek motor/JDK arşivlerinin toplamı yaklaşık 975 MB'dir (ondalık).
 Uygulama arşivi buna dahil değildir. Motorlu kurulum x86_64 glibc >= 2.34 ister;
-uygulamanın kendisinin tabanı glibc 2.28 olarak kalır. Diğer dağıtımlarda gereken
-paylaşılan masaüstü/Java kitaplıkları dağıtımın paket yöneticisiyle sağlanmalıdır.
+uygulamanın kendisinin tabanı glibc 2.28 olarak kalır. 0.2.1 kurucusu Debian ailesinde apt-get, Arch ailesinde pacman ile gereken
+paylaşılan masaüstü/Java kitaplıklarını kurabilir. Destek kapsamı bu iki ailedir.
 Java'nın GUI kitaplıkları, native Ghidra decompiler ve RetDec bağımlılıkları
 kurulum sırasında `ldd` ile, Java derleyicisi/motor sürümleri gerçek komutlarla
 kontrol edilir. Uyumsuzlukta yeni grup etkinleştirilmez.
