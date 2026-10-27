@@ -67,6 +67,7 @@ def main():
         run(sys.executable, 'tests/test_system_dependencies.py')
         run(stage/'runtime/python/bin/python3', ROOT/'tests/test_managed_tools.py')
         run(stage/'runtime/python/bin/python3', ROOT/'tests/test_tool_ui.py')
+        run(stage/'runtime/python/bin/python3', ROOT/'tests/test_mcp_timeouts.py')
         run(sys.executable, 'tests/test_distribution.py', '--package', stage)
         run(sys.executable, 'tests/test_managed_engines_live.py', '--package', stage, '--report', work/'managed-engines.json')
         run(stage/'run', '--smoke-test', '--report', work/'smoke.json',
