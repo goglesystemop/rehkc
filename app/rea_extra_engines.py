@@ -47,7 +47,8 @@ class ExtraEngineWorker(QThread):
             service.unchanged();result['cache_hit']=True
             self.log_line.emit('Önbellek: aynı dosya ve motor ayarları için tamamlanan sonuç kullanıldı.','info')
             return result
-        if self.engine=='adaptive':
+        if self.engine=='functions':result=service.quick_functions()
+        elif self.engine=='adaptive':
             self.log_line.emit('Ghidra seçili fonksiyonu çözüyor; gerekirse RetDec/Radare2 denenecek. Durdur kullanılabilir.','run')
             router=None;reused=False
             if self.session_pool is not None:

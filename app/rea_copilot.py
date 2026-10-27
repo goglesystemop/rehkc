@@ -24,6 +24,7 @@ The app first supplies a bounded static preflight, including packer indicators a
 Start with quick_functions or inspect_with_objdump for discovery. Do not request a global list_procedures unless the question needs the full function inventory.
 For decompilation request only the selected function/entry point with procedure_pseudo_code. Deep Ghidra analysis may still analyze the binary globally internally.
 Successful observations can be cached; a cache hit is prior engine evidence for identical file contents and engine configuration.
+Do not repeat an identical tool request in this question. Its earlier result or failure remains valid evidence; request a different operation only if it adds needed information.
 If Ghidra fails the app can use selective RetDec or Radare2. Always name the returned engine; partial inventory, bounded ranges and approximate pdc are not a complete source recovery.
 Packer indicators are heuristic. Recovered loader/stub code does not establish recovery of the packed payload. Never execute or unpack the target automatically.
 Some provider inventory operations may fail; after an error do not repeat an unchanged call. Use objdump as a fallback.
@@ -318,15 +319,18 @@ class McpCopilotWorker(QThread):
             tools=router.definitions()
             record['tools']=[t['function']['name'] for t in tools]
             if not tools:raise ValueError('Uygun statik MCP aracı yok.')
+            request_results={}
+            finish_with_evidence=False
+            record['reused_tool_requests']=[]
             for turn in range(self.max_turns):
                 self.check()
-                allow_tools=turn<self.max_turns-1 and router.calls<self.max_calls
+                allow_tools=not finish_with_evidence and turn<self.max_turns-1 and router.calls<self.max_calls
                 active_tools=router.definitions() if allow_tools else []
                 messages=self.fit(active_tools)
                 record['model_requests']=turn+1
                 record.setdefault('model_input_characters',[]).append(size(messages)+size(active_tools))
                 self.log_line.emit('Copilot MCP turu '+str(turn+1)+' / '+str(self.max_turns),'info')
-                require_tools=not any(e['status']=='ok' and e['requested_by']=='copilot' for e in router.events)
+                require_tools=bool(active_tools) and not any(e['status']=='ok' and e['requested_by']=='copilot' for e in router.events)
                 self.phase='Model yanıtı / '+self.model[:80]
                 self.wait_context=None
                 text,calls=self.model_round(messages,active_tools,require_tools=require_tools)
@@ -353,21 +357,40 @@ class McpCopilotWorker(QThread):
                 if text and self.pieces:
                     self.pieces.append('\n\n');self.chunk_received.emit('\n\n')
                 group=[{'role':'assistant','content':text[:1000] or None,'tool_calls':calls}]
+                new_requests=0
                 for call in calls:
                     self.check()
+                    name=call['function']['name']
                     try:
                         args=json.loads(call['function']['arguments'])
-                        self.phase='MCP / '+call['function']['name'][:80]
+                        key=json.dumps([name,args],ensure_ascii=False,sort_keys=True,separators=(',',':'))
+                    except (ValueError,TypeError):
+                        args=None
+                        key=json.dumps([name,call['function']['arguments']])
+                    if key in request_results:
+                        original_id,raw=request_results[key]
+                        record['reused_tool_requests'].append({'tool':name,'call_id':call['id'],'original_call_id':original_id})
+                        self.log_line.emit(name+': aynı sorudaki önceki sonuç/hata kullanıldı; araç yeniden çalıştırılmadı.','info')
+                        group.append({'role':'tool','tool_call_id':call['id'],'content':raw})
+                        continue
+                    new_requests+=1
+                    try:
+                        if args is None:raise ValueError('Araç parametreleri geçerli JSON nesnesi olmalı.')
+                        self.phase='MCP / '+name[:80]
                         self.wait_context=None
-                        result=router.execute(call['function']['name'],args)
+                        result=router.execute(name,args)
                         raw=json.dumps(result_for_model(result),ensure_ascii=False)
                     except (McpCancelled,TimeoutError):raise
                     except Exception as exc:
                         # The model receives a real error, never fabricated successful evidence.
                         raw=json.dumps({'error':str(exc)[:1600],'success':False},ensure_ascii=False)
-                    group.append({'role':'tool','tool_call_id':call['id'],
-                        'content':excerpt(raw,min(6000,max(600,self.context_limit//3)))})
+                    raw=excerpt(raw,min(6000,max(600,self.context_limit//3)))
+                    request_results[key]=(call['id'],raw)
+                    group.append({'role':'tool','tool_call_id':call['id'],'content':raw})
                 self.rounds.append(group)
+                if not new_requests:
+                    finish_with_evidence=True
+                    self.log_line.emit('Yinelenen araç döngüsü durduruldu; model mevcut kanıtla son yanıtı hazırlayacak.','warn')
             else:
                 raise ValueError('Otonom analiz tur sınırına ulaştı; araç günlüğünü inceleyin.')
             self.check()

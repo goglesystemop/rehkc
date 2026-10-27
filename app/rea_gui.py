@@ -720,6 +720,8 @@ def read_session(path):
         raise ValueError("Geçersiz MCP modu.")
     from rea_mcp import validate_runs
     validate_runs(data["mcp_runs"])
+    from rea_saved_code import validate_saved_code
+    data['code_exports'] = validate_saved_code(data.get('code_exports', {}), data['target_path'], data['panes'])
     return data
 
 
@@ -1799,6 +1801,7 @@ class ReaMainWindow(QMainWindow):
         menu_decomp.addAction("Decompile (Ghidra → RetDec → Radare2)", self.action_decompile)
         menu_decomp.addAction("Decompile with RetDec", self.action_retdec)
         menu_decomp.addAction("Analyze with Radare2", self.action_radare2)
+        menu_decomp.addAction("Fonksiyon bul ve analiz et…", self.action_functions)
         menu_decomp.addAction("Analiz önbelleğini temizle", self.action_clear_analysis_cache)
         menu_decomp.addAction("Seçili dosyanın önbelleğini temizle", self.action_clear_target_cache)
         menu_decomp.addAction("Seçili fonksiyonu yeniden analiz et", lambda:self.action_decompile(refresh=True))
@@ -1973,6 +1976,10 @@ class ReaMainWindow(QMainWindow):
         self.lbl_search_count = QLabel("Aranacak metni yazın")
         self.lbl_search_count.setToolTip("Çok fazla sonuçta sayaç 2000+ gösterir; sonraki/önceki tüm metinde çalışır.")
         row.addWidget(self.lbl_search_count)
+        self.btn_functions = QPushButton("Fonksiyonlar…")
+        self.btn_functions.setToolTip("Giriş/sembol listesini ad veya adresle filtreleyin; tam envanter değildir.")
+        self.btn_functions.clicked.connect(self.action_functions)
+        row.addWidget(self.btn_functions)
         close = QPushButton("×")
         close.setFixedWidth(28)
         close.setStyleSheet("padding: 2px; font-size: 16px;")
@@ -2709,6 +2716,20 @@ class ReaMainWindow(QMainWindow):
         messages = [dict(message) for message in self.chat_history]
         if getattr(self, "_stream_start", None) is not None and getattr(self, "_stream_text", ""):
             messages.append({"role": "assistant", "content": self._stream_text + "\n\n[Kaydedilirken yanıt devam ediyordu]"})
+        from rea_saved_code import text_digest
+        code_exports = {}
+        for pane in ('decomp', 'disasm'):
+            editor = getattr(self, 'tab_' + pane)
+            saved = self._code_exports.get(editor)
+            if saved is not None and saved[0] == self._analysis_target_context():
+                code_exports[pane] = {'view_sha256': text_digest(editor.toPlainText()),
+                                      'record': json.loads(json.dumps(saved[1]))}
+            elif (getattr(self.current_worker, 'engine', '') == 'restore_code_exports' and
+                  self.current_worker.target_context == self._analysis_target_context()):
+                pending = self.current_worker.saved.get(pane)
+                if pending and pending['view_sha256'] == text_digest(editor.toPlainText()):
+                    # Saving pending historical evidence does not authorize exporting it.
+                    code_exports[pane] = json.loads(json.dumps(pending))
         return {"format": "makulu-rea-session", "version": 1,
                 "saved_at": datetime.now(timezone.utc).isoformat(),
                 "target_path": self.target_path, "target_signature": signature,
@@ -2716,6 +2737,7 @@ class ReaMainWindow(QMainWindow):
                 "messages": messages, "draft": self.txt_prompt.toPlainText(),
                 "mcp_enabled": self.chk_mcp.isChecked(),
                 "mcp_runs": json.loads(json.dumps(self.mcp_runs)),
+                "code_exports": code_exports,
                 "session_notes": self.session_notes, "bookmarks": [dict(item) for item in self.bookmarks],
                 "panes": {name: getattr(self, "tab_" + name).toPlainText() for name in SESSION_PANES},
                 "active_tab": self.tabs.currentIndex(), "log": self.txt_log.toPlainText(),
@@ -2820,6 +2842,18 @@ class ReaMainWindow(QMainWindow):
                     self.append_log("Hedef dosya değişmiş; ekrandaki analiz kaydedilmiş eski çıktıdır. Yeniden analiz edin.", "warn")
             except OSError:
                 self.append_log("Hedef dosya bulunamadı; kayıtlı analizler açıldı. Devam etmek için dosyayı yeniden seçin.", "warn")
+        if data['code_exports'] and os.path.isfile(self.target_path):
+            from rea_saved_code import SavedCodeVerifier
+            self.current_worker = SavedCodeVerifier(self.target_path, data['code_exports'], self)
+            self.current_worker.target_context = self._analysis_target_context()
+            self.current_worker.analysis_progress.connect(self._on_analysis_progress)
+            self.current_worker.completed.connect(self._on_tool_completed)
+            self.current_worker.failed.connect(self._on_tool_failed)
+            self.current_worker.finished.connect(self._analysis_finished)
+            self.btn_stop_analysis.setEnabled(True)
+            self.btn_stop_analysis.setText('Doğrulamayı durdur')
+            self.append_log('Kayıtlı kodun hedef SHA256 bilgisi arka planda doğrulanıyor; motor yeniden çalıştırılmıyor.', 'info')
+            self.current_worker.start()
         return True
 
     def _open_session_dialog(self):
@@ -3010,7 +3044,41 @@ class ReaMainWindow(QMainWindow):
         if not self._analysis_result_is_current():
             return
         self.lbl_analysis_progress.setText("Analiz işlemi tamamlandı: "+command_id)
-        if command_id == "inspect_headers":
+        if command_id == 'restore_code_exports':
+            from rea_saved_code import text_digest
+            worker = self.sender()
+            result = json.loads(output)
+            if worker is not self.current_worker or result['target'] != self.target_path:
+                return
+            count = 0
+            for pane in result['matched']:
+                editor = getattr(self, 'tab_' + pane)
+                item = worker.saved[pane]
+                if item['view_sha256'] == text_digest(editor.toPlainText()):
+                    self._code_exports[editor] = (self._analysis_target_context(), item['record'])
+                    count += 1
+            self.append_log(f'Kayıtlı kod SHA256 doğrulaması: {count} görünüm dışa aktarmaya hazır. Eşleşmeyen sonuçlar için yeniden analiz gerekir.', 'info')
+        elif command_id == 'functions':
+            from rea_analysis import observation
+            from rea_function_picker import FunctionPickerDialog
+            try:
+                result = json.loads(output)
+                if result['target'] != self.target_path:
+                    raise ValueError('Hedef değişti.')
+                context = self._analysis_target_context()
+                dialog = FunctionPickerDialog(observation(result)['observed_result'], self)
+                if dialog.exec_() == QDialog.Accepted and dialog.procedure():
+                    procedure = dialog.procedure()
+                    def selected_analysis():
+                        if context == self._analysis_target_context():
+                            self.action_decompile(procedure=procedure)
+                        else:
+                            self.append_log('Hedef değişti; önceki fonksiyon seçimi kullanılmadı.', 'warn')
+                    QTimer.singleShot(0, selected_analysis)
+                dialog.deleteLater()
+            except (ValueError, KeyError, TypeError) as exc:
+                self._on_tool_failed(command_id, str(exc))
+        elif command_id == "inspect_headers":
             self.stack_overview.setCurrentIndex(1)
             self.tab_overview.setText(output)
             self.tabs.setCurrentIndex(0)
@@ -3227,7 +3295,28 @@ class ReaMainWindow(QMainWindow):
     def action_retdec(self):
         self._start_additional_engine("retdec")
 
-    def action_decompile(self, refresh=False):
+    def action_functions(self):
+        if self._session_busy():
+            self.append_log('Fonksiyon listesini açmadan önce çalışan işlemi bitirin veya durdurun.', 'warn')
+            return
+        if not self._ensure_target():
+            return
+        if self._session_busy():
+            self.append_log('Hedefin ilk incelemesi bitince fonksiyon listesini açabilirsiniz.', 'info')
+            return
+        from rea_extra_engines import ExtraEngineWorker
+        self.current_worker = ExtraEngineWorker('functions', self.target_path, parent=self,
+            rea_bin=self.settings.get('rea_bin', REA_BIN_PATH))
+        self.current_worker.target_context = self._analysis_target_context()
+        self.current_worker.analysis_progress.connect(self._on_analysis_progress)
+        self.current_worker.completed.connect(self._on_tool_completed)
+        self.current_worker.failed.connect(self._on_tool_failed)
+        self.current_worker.finished.connect(self._analysis_finished)
+        self.btn_stop_analysis.setText('Analizi durdur')
+        self.btn_stop_analysis.setEnabled(True)
+        self.current_worker.start()
+
+    def action_decompile(self, refresh=False, procedure=None):
         if self.ai_worker and self.ai_worker.isRunning() and getattr(self.ai_worker, "is_mcp", False):
             self.append_log("Önce otonom MCP analizini durdurun veya bitmesini bekleyin.", "warn")
             return
@@ -3239,10 +3328,11 @@ class ReaMainWindow(QMainWindow):
         import re
         selected = self._active_search_editor().textCursor().selectedText().strip()
         default = selected if re.fullmatch(r"(?:0x[0-9a-fA-F]+|[A-Za-z_][\w:.$@]*)", selected) else "main"
-        procedure, accepted = QInputDialog.getText(self, "Otomatik motorla decompile",
-            "Fonksiyon adı veya adresi (ör. main veya 0x401146):\nSembol adı olmayan dosyada adres kullanın.", QLineEdit.Normal, default)
-        if not accepted:
-            return
+        if procedure is None:
+            procedure, accepted = QInputDialog.getText(self, "Otomatik motorla decompile",
+                "Fonksiyon adı veya adresi (ör. main veya 0x401146):\nSembol adı olmayan dosyada adres kullanın.", QLineEdit.Normal, default)
+            if not accepted:
+                return
         procedure = procedure.strip()
         if not procedure:
             self.append_log("Bir fonksiyon adı veya adresi girin.", "warn")
