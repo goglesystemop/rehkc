@@ -1,0 +1,50 @@
+name: Verify public release clean install
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verify-published.yml
+      - tests/test_published_install.py
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rehkc-published-verification
+  cancel-in-progress: false
+jobs:
+  debian:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install README prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends git python3 ca-certificates
+      - name: Install the public release from a fresh GitHub clone and cache
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("packaging/version.json"))["version"])')
+          python3 tests/test_published_install.py --work-dir "$RUNNER_TEMP/rehkc-published-debian" --expected-version "$version" --family debian
+  arch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: archlinux:base@sha256:52dfbd5afb23a220d5ee92dafcb4c788d96c026ed04179890c23adef4c897fa0
+    steps:
+      - name: Install README prerequisites and container test sudo
+        run: pacman -Syu --noconfirm --needed git python ca-certificates sudo
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Configure an unprivileged test account
+        run: |
+          useradd --create-home --shell /bin/bash rehkc-test
+          printf 'rehkc-test ALL=(root) NOPASSWD: /usr/bin/pacman\n' > /etc/sudoers.d/rehkc-test
+          chmod 0440 /etc/sudoers.d/rehkc-test
+          chown -R rehkc-test:rehkc-test "$GITHUB_WORKSPACE"
+      - name: Install the public release through real sudo and pacman
+        run: |
+          version=$(python -c 'import json; print(json.load(open("packaging/version.json"))["version"])')
+          runuser -u rehkc-test -- python tests/test_published_install.py --work-dir /tmp/rehkc-published-arch --expected-version "$version" --family arch
