@@ -1505,6 +1505,8 @@ class ReaMainWindow(QMainWindow):
             self.setWindowIcon(QIcon(ICON_PATH))
 
         # State
+        from rea_analysis_session import AnalysisSessionPool
+        self.analysis_sessions=AnalysisSessionPool()
         self.settings = load_gui_settings()
         provider = self.settings.get("provider") or ("ollama" if ":11434" in self.settings.get("server_base", "") else "lmstudio")
         self.settings["provider"] = provider
@@ -1515,6 +1517,7 @@ class ReaMainWindow(QMainWindow):
             "model": self.settings.get("model", "")})
         self._session_target_signature = None
         self._target_generation = 0
+        self._code_exports = {}
         self.target_path = target_file or ""
         self.current_worker: Optional[ToolExecutionWorker] = None
         self.ai_worker: Optional[ElectraAiChatWorker] = None
@@ -1770,7 +1773,7 @@ class ReaMainWindow(QMainWindow):
         btn_disasm.clicked.connect(self.action_disassemble)
         actions_layout.addWidget(btn_disasm)
 
-        btn_decompile = QPushButton("Decompile (Ghidra)")
+        btn_decompile = QPushButton("Decompile (Otomatik)")
         btn_decompile.setProperty("class", "action")
         btn_decompile.clicked.connect(self.action_decompile)
         actions_layout.addWidget(btn_decompile)
@@ -1793,10 +1796,17 @@ class ReaMainWindow(QMainWindow):
         menu_more = QMenu(self)
 
         menu_decomp = menu_more.addMenu("Decompilation Engines")
-        menu_decomp.addAction("Decompile with Ghidra", self.action_decompile)
+        menu_decomp.addAction("Decompile (Ghidra → RetDec → Radare2)", self.action_decompile)
         menu_decomp.addAction("Decompile with RetDec", self.action_retdec)
         menu_decomp.addAction("Analyze with Radare2", self.action_radare2)
+        menu_decomp.addAction("Analiz önbelleğini temizle", self.action_clear_analysis_cache)
+        menu_decomp.addAction("Seçili dosyanın önbelleğini temizle", self.action_clear_target_cache)
+        menu_decomp.addAction("Seçili fonksiyonu yeniden analiz et", lambda:self.action_decompile(refresh=True))
+        menu_decomp.addAction("Açık analiz oturumunu bırak", self.action_release_analysis_session)
         menu_decomp.addAction("GNU objdump Disassembly", self.action_disassemble)
+        self.act_export_code = menu_decomp.addAction("Seçili kodu dışa aktar…", self._export_code_dialog)
+        self.act_export_code.setShortcut(QKeySequence("Ctrl+Shift+E"))
+        self.addAction(self.act_export_code)
         self.catalog_menu = menu_more.addMenu("Installed REA Tools")
         self.catalog_menu.addAction("Komut listesi alınıyor…").setEnabled(False)
         menu_more.addAction("Refresh REA Command List", self._refresh_command_catalog)
@@ -1816,6 +1826,10 @@ class ReaMainWindow(QMainWindow):
         actions_layout.addWidget(btn_auto_ai)
 
         layout.addWidget(actions_bar)
+        self.lbl_analysis_progress=QLabel("Analiz: hazır")
+        self.lbl_analysis_progress.setTextFormat(Qt.PlainText)
+        self.lbl_analysis_progress.setWordWrap(True)
+        layout.addWidget(self.lbl_analysis_progress)
 
         # Tab Widget
         self.tabs = QTabWidget()
@@ -1905,6 +1919,8 @@ class ReaMainWindow(QMainWindow):
         self.tab_decomp.setProperty("class", "code-view")
         self.tab_decomp.setPlaceholderText("Decompiled C pseudocode will appear here...")
         self.tabs.addTab(self.tab_decomp, "Decompiled C")
+        for editor in (self.tab_disasm, self.tab_decomp):
+            editor.textChanged.connect(lambda editor=editor: self._code_exports.pop(editor, None))
 
         # Tab 4: Strings & Symbols
         self.tab_strings = QTextEdit()
@@ -2138,6 +2154,13 @@ class ReaMainWindow(QMainWindow):
             bookmark_details = {"text": text, "first_line": line, "last_line": line} if text.strip() else None
         bookmark.setEnabled(bool(bookmark_details and not self._session_busy()))
         bookmark.triggered.connect(lambda checked=False, captured=bookmark_details: self._add_bookmark(pane, captured))
+        if pane in ("decomp", "disasm"):
+            menu.addSeparator()
+            export = menu.addAction("Seçili kodu dışa aktar…")
+            export.setObjectName("export_code")
+            saved = self._code_exports.get(editor)
+            export.setEnabled(saved is not None and saved[0] == self._analysis_target_context())
+            export.triggered.connect(lambda checked=False: self._export_code_dialog(editor))
         return menu
 
     def _show_selection_menu(self, editor, pane, point):
@@ -2746,6 +2769,7 @@ class ReaMainWindow(QMainWindow):
             if choice != QMessageBox.Yes:
                 return False
         provider = data["provider"]
+        self.analysis_sessions.clear()
         self._loading_session = True
         try:
             self.combo_provider.setCurrentIndex(self.combo_provider.findData(provider))
@@ -2809,6 +2833,50 @@ class ReaMainWindow(QMainWindow):
             QMessageBox.information(self, "Son oturum", "Henüz otomatik kaydedilmiş bir oturum yok.")
             return
         self._load_session(path)
+
+    def _remember_code_export(self, editor, result, kind):
+        from rea_code_export import code_record
+        try:
+            procedure = getattr(self.sender() or self.current_worker, "procedure", "")
+            record = code_record(result, procedure, kind)
+            if record['target'] == self.target_path:
+                self._code_exports[editor] = (self._analysis_target_context(), record)
+        except (ValueError, KeyError, TypeError):
+            self._code_exports.pop(editor, None)
+
+    def _export_code_dialog(self, editor=None):
+        from rea_code_export import render_code
+        if editor not in (self.tab_disasm, self.tab_decomp):
+            editor = self.tabs.currentWidget()
+        saved = self._code_exports.get(editor)
+        if saved is None or saved[0] != self._analysis_target_context():
+            self.append_log("Decompiled C veya Disassembly sekmesinde motor bilgisi bulunan güncel bir sonuç seçin. Kayıtlı/eski çıktıyı yeniden analiz edin.", "warn")
+            return False
+        # Freeze selection and provenance before the native file dialog processes events.
+        record = saved[1]
+        selection = editor.textCursor().selectedText().replace("\u2029", "\n").replace("\u2028", "\n")
+        path, selected_filter = QFileDialog.getSaveFileName(self, "Seçili kodu dışa aktar",
+            os.path.join(self._session_directory(), os.path.basename(record['target']) + ".kod.md"),
+            "Markdown (*.md);;Metin (*.txt);;JSON (*.json)")
+        if not path:
+            return False
+        extension = os.path.splitext(path)[1].lower()
+        if not extension:
+            extension = ".json" if "JSON" in selected_filter else ".txt" if "Metin" in selected_filter else ".md"
+            path += extension
+        try:
+            if extension not in (".md", ".txt", ".json"):
+                raise ValueError(".md, .txt veya .json uzantısını kullanın.")
+            if saved[0] != self._analysis_target_context() or self._code_exports.get(editor) is not saved:
+                raise ValueError("Hedef veya analiz sonucu değişti; dışa aktarmayı yeniden başlatın.")
+            if os.path.abspath(path) == os.path.abspath(record['target']) or (os.path.exists(path) and os.path.samefile(path, record['target'])):
+                raise ValueError("Hedef dosyanın üzerine analiz çıktısı yazılamaz.")
+            atomic_private_write(path, render_code(record, selection, extension[1:]))
+            self.append_log("Kod ve motor bilgisi dışa aktarıldı: " + path, "success")
+            return True
+        except Exception as exc:
+            QMessageBox.warning(self, "Kod dışa aktarılamadı", str(exc))
+            return False
 
     def _export_session_dialog(self):
         path, selected = QFileDialog.getSaveFileName(self, "Sohbet ve analizi dışa aktar", os.path.join(self._session_directory(), "analiz.md"), "Markdown (*.md);;Metin (*.txt)")
@@ -2941,6 +3009,7 @@ class ReaMainWindow(QMainWindow):
     def _on_tool_completed(self, command_id: str, output: str):
         if not self._analysis_result_is_current():
             return
+        self.lbl_analysis_progress.setText("Analiz işlemi tamamlandı: "+command_id)
         if command_id == "inspect_headers":
             self.stack_overview.setCurrentIndex(1)
             self.tab_overview.setText(output)
@@ -2948,21 +3017,40 @@ class ReaMainWindow(QMainWindow):
         elif command_id == "disassemble":
             self.tab_disasm.setPlainText(output)
             self.tabs.setCurrentIndex(1)
-        elif command_id in ("radare2", "retdec"):
+        elif command_id in ("radare2", "retdec", "adaptive"):
             self.tab_raw.setPlainText(output)
             try:
+                from rea_analysis import observation
                 result = json.loads(output)
                 if result.get("target") != self.target_path:
-                    self.append_log("Hedef değişti; önceki dosyanın sonucu yalnızca Tool Output sekmesinde korundu.", "warn")
-                    return
-                if command_id == "radare2":
-                    self.tab_disasm.setPlainText(result["report"])
-                    self.tab_strings.setPlainText(result["strings_report"])
-                    self.tabs.setCurrentIndex(1)
-                else:
-                    self.tab_decomp.setPlainText("/* " + result["version"] + " — decompiler çıktısı (özgün kaynak kod değildir) */\n" + result["code"])
-                    self.tabs.setCurrentIndex(2)
-                self.append_log(result["version"] + " işlemi tamamlandı.", "success")
+                    raise ValueError("Hedef dosya değişti.")
+                value = observation(result)
+                provider = value.get("provider", {})
+                engine = value.get("engine") or provider.get("name", "Ghidra")
+                observed = value.get("observed_result", value.get("normalized_result"))
+                if observed is None:
+                    raise ValueError("Motor kullanılabilir sonuç üretmedi.")
+                text = observed if isinstance(observed, str) else json.dumps(observed, ensure_ascii=False, indent=2)
+                notes = list(value.get("limitations", [])) if value.get("engine") else []
+                indicators = result.get("preflight", {}).get("packer_indicators", [])
+                if indicators:
+                    notes.insert(0, "Paketleyici/koruma işaretleri: " + ", ".join(indicators) +
+                        ". Bu kod yalnız yükleyiciye ait olabilir; asıl programın kurtarıldığı anlamına gelmez.")
+                if result.get("cache_hit"):
+                    notes = ["Önbellek: aynı dosya ve motor ayarları."] + notes
+                if result.get("refresh_requested"):
+                    notes = ["Önbellek atlanarak yeniden analiz edildi."] + notes
+                if value.get("fallback_from"):
+                    notes = [str(failure.get("engine", "Motor")) + ": " +
+                        str(failure.get("error", "hata")).splitlines()[0][:180]
+                        for failure in value["fallback_from"]] + notes
+                    notes.append("Alternatif motor kullanıldı; hata ayrıntıları Tool Output sekmesinde.")
+                text = "/* " + str(engine) + " — statik analiz; özgün kaynak kod değildir */\n" + "\n".join(notes) + "\n\n" + text
+                editor = self.tab_disasm if command_id == "radare2" else self.tab_decomp
+                editor.setPlainText(text)
+                self._remember_code_export(editor, result, "assembly" if command_id == "radare2" else "pseudocode")
+                self.tabs.setCurrentIndex(1 if command_id == "radare2" else 2)
+                self.append_log(str(engine) + " işlemi tamamlandı.", "success")
             except (ValueError, KeyError, TypeError) as exc:
                 self._on_tool_failed(command_id, "Analiz çıktısı okunamadı: " + str(exc))
         elif command_id == "decompile":
@@ -3021,14 +3109,15 @@ class ReaMainWindow(QMainWindow):
     def _on_tool_failed(self, command_id: str, err: str):
         if not self._analysis_result_is_current():
             return
+        self.lbl_analysis_progress.setText("Analiz tamamlanamadı: "+command_id)
         if command_id in ("strings", "security_audit"):
             editor = self.tab_strings if command_id == "strings" else self.tab_overview
             editor.setPlainText("İnceleme tamamlanamadı:\n" + err)
             if command_id == "security_audit":
                 self.stack_overview.setCurrentIndex(1)
             self.tabs.setCurrentIndex(3 if command_id == "strings" else 0)
-        if command_id in ("decompile", "retdec"):
-            engine = "Ghidra" if command_id == "decompile" else "RetDec"
+        if command_id in ("decompile", "retdec", "adaptive"):
+            engine = "Otomatik motor" if command_id == "adaptive" else "Ghidra" if command_id == "decompile" else "RetDec"
             self.tab_decomp.setPlainText(engine + " decompile başarısız:\n" + err)
             self.tabs.setCurrentIndex(2)
         if command_id == "radare2":
@@ -3058,7 +3147,7 @@ class ReaMainWindow(QMainWindow):
             self.append_log("Başka bir analiz çalışıyor; tamamlanmasını bekleyin.", "warn")
             return
         label = "Radare2 analizi" if engine == "radare2" else "RetDec decompile"
-        prompt = "Fonksiyon adı veya 0x adresi (boş: fonksiyon/string envanteri):" if engine == "radare2" else "Fonksiyon adı/adları (virgülle; boş: tüm dosya):"
+        prompt = "Fonksiyon adı veya 0x adresi (boş: fonksiyon/string envanteri):" if engine == "radare2" else "Fonksiyon adı veya 0x adresi (boş: giriş noktası; seçici analiz):"
         procedure, accepted = QInputDialog.getText(self, label, prompt, QLineEdit.Normal, "main")
         if not accepted:
             return
@@ -3069,7 +3158,9 @@ class ReaMainWindow(QMainWindow):
         else:
             self.tab_decomp.setPlainText("RetDec decompile ediyor…")
             self.tabs.setCurrentIndex(2)
-        self.current_worker = ExtraEngineWorker(engine, self.target_path, procedure.strip(), self)
+        self.current_worker = ExtraEngineWorker(engine, self.target_path, procedure.strip(), self,session_pool=self.analysis_sessions)
+        self.current_worker.preflight_ready.connect(self._on_analysis_preflight)
+        self.current_worker.analysis_progress.connect(self._on_analysis_progress)
         self.current_worker.target_context = self._analysis_target_context()
         self.current_worker.log_line.connect(self.append_log)
         self.current_worker.completed.connect(self._on_tool_completed)
@@ -3079,13 +3170,67 @@ class ReaMainWindow(QMainWindow):
         self.btn_stop_analysis.setEnabled(True)
         self.current_worker.start()
 
+    def action_clear_analysis_cache(self):
+        if self._session_busy():
+            self.append_log("Önbelleği temizlemeden önce çalışan analizi durdurun veya bitmesini bekleyin.","warn")
+            return
+        self.analysis_sessions.clear()
+        from rehkc_paths import data_dir
+        count = 0
+        for path in (data_dir() / "analysis-cache").glob("*.json"):
+            try:
+                path.unlink()
+                count += 1
+            except OSError:
+                pass
+        self.append_log(f"Analiz önbelleği temizlendi: {count} kayıt.", "info")
+
+    def _on_analysis_preflight(self, result):
+        if not self._analysis_result_is_current() or result.get("target") != self.target_path:
+            return
+        self.tab_overview.setPlainText("Hızlı dosya ön incelemesi — derin analiz sürerken bu sonuç kullanılabilir.\n\n" +
+            json.dumps(result["preflight"], ensure_ascii=False, indent=2))
+        self.stack_overview.setCurrentIndex(1)
+
+    def action_clear_target_cache(self):
+        if not self.target_path:
+            self.append_log("Önce bir hedef dosya seçin.", "warn")
+            return
+        if self._session_busy():
+            self.append_log("Önbelleği temizlemeden önce çalışan analizi durdurun veya bitmesini bekleyin.","warn")
+            return
+        self.analysis_sessions.clear()
+        from rea_analysis import ResultCache
+        count=ResultCache.clear_target(self.target_path)
+        self.append_log(f"Seçili dosyanın önbelleği temizlendi: {count} kayıt.", "info")
+
+    def action_release_analysis_session(self):
+        if self._session_busy():
+            self.append_log("Oturumu bırakmadan önce çalışan analizi durdurun veya bitmesini bekleyin.","warn")
+            return
+        self.analysis_sessions.clear()
+        self.append_log("Açık analiz oturumu kapatılıyor; kaydedilmiş sonuç önbelleği korunuyor.","info")
+
+    def _on_analysis_progress(self, progress):
+        worker=self.sender()
+        if worker not in (self.current_worker,self.ai_worker) or not self._analysis_result_is_current():return
+        activity=progress.get("last_activity_seconds")
+        note="henüz araç verisi gelmedi" if activity is None else f"son araç verisi {activity:.1f} sn önce"
+        text=f"{progress['operation']} · {progress['elapsed']:.1f} sn · {note}"
+        if progress.get("total_bytes"):
+            text+=f" · taranan %{min(100,100*progress['bytes_read']/progress['total_bytes']):.1f}"
+        self.lbl_analysis_progress.setText(text)
+
     def action_radare2(self):
         self._start_additional_engine("radare2")
 
     def action_retdec(self):
         self._start_additional_engine("retdec")
 
-    def action_decompile(self):
+    def action_decompile(self, refresh=False):
+        if self.ai_worker and self.ai_worker.isRunning() and getattr(self.ai_worker, "is_mcp", False):
+            self.append_log("Önce otonom MCP analizini durdurun veya bitmesini bekleyin.", "warn")
+            return
         if not self._ensure_target():
             return
         if self.current_worker and self.current_worker.isRunning():
@@ -3094,7 +3239,7 @@ class ReaMainWindow(QMainWindow):
         import re
         selected = self._active_search_editor().textCursor().selectedText().strip()
         default = selected if re.fullmatch(r"(?:0x[0-9a-fA-F]+|[A-Za-z_][\w:.$@]*)", selected) else "main"
-        procedure, accepted = QInputDialog.getText(self, "Ghidra ile decompile",
+        procedure, accepted = QInputDialog.getText(self, "Otomatik motorla decompile",
             "Fonksiyon adı veya adresi (ör. main veya 0x401146):\nSembol adı olmayan dosyada adres kullanın.", QLineEdit.Normal, default)
         if not accepted:
             return
@@ -3105,8 +3250,19 @@ class ReaMainWindow(QMainWindow):
         self.append_log(f"Ghidra: {procedure} decompile ediliyor…", "run")
         self.tab_decomp.setPlainText(f"Ghidra {procedure} fonksiyonunu analiz ediyor…")
         self.tabs.setCurrentIndex(2)
-        self._run_tool_command("decompile", ["decompile", self.target_path, "--provider", "ghidra",
-                                "--procedure=" + procedure, "--format", "json", "--full-output"])
+        from rea_extra_engines import ExtraEngineWorker
+        self.current_worker = ExtraEngineWorker("adaptive", self.target_path, procedure, self,
+            rea_bin=self.settings.get("rea_bin", REA_BIN_PATH),refresh=refresh,session_pool=self.analysis_sessions)
+        self.current_worker.preflight_ready.connect(self._on_analysis_preflight)
+        self.current_worker.analysis_progress.connect(self._on_analysis_progress)
+        self.current_worker.target_context = self._analysis_target_context()
+        self.current_worker.log_line.connect(self.append_log)
+        self.current_worker.completed.connect(self._on_tool_completed)
+        self.current_worker.failed.connect(self._on_tool_failed)
+        self.current_worker.finished.connect(self._analysis_finished)
+        self.btn_stop_analysis.setEnabled(True)
+        self.btn_stop_analysis.setText("Analizi durdur")
+        self.current_worker.start()
 
     def _run_static_inspection(self, operation):
         if self.ai_worker and self.ai_worker.isRunning() and getattr(self.ai_worker, "is_mcp", False):
@@ -3119,6 +3275,7 @@ class ReaMainWindow(QMainWindow):
             return
         from rea_static_tools import StaticInspectionWorker
         self.current_worker = StaticInspectionWorker(operation, self.target_path, parent=self)
+        self.current_worker.analysis_progress.connect(self._on_analysis_progress)
         self.current_worker.target_context = self._analysis_target_context()
         self.current_worker.log_line.connect(self.append_log)
         self.current_worker.completed.connect(self._on_tool_completed)
@@ -3126,7 +3283,7 @@ class ReaMainWindow(QMainWindow):
         self.current_worker.finished.connect(self._analysis_finished)
         self.btn_stop_analysis.setText("Analizi durdur")
         self.btn_stop_analysis.setEnabled(True)
-        self.append_log(("String çıkarma" if operation == "strings" else "Statik ELF güvenlik özellikleri") + " başlatılıyor…", "run")
+        self.append_log(("String çıkarma" if operation == "strings" else "Statik PE/ELF güvenlik özellikleri") + " başlatılıyor…", "run")
         self.current_worker.start()
 
     def action_strings(self):
@@ -3690,6 +3847,7 @@ class ReaMainWindow(QMainWindow):
         if self.model_worker and self.model_worker.isRunning():
             self.model_worker.wait(9000)
         self._autosave_session()
+        self.analysis_sessions.close()
         super().closeEvent(event)
 
     def _on_model_changed(self):
@@ -3731,6 +3889,10 @@ class ReaMainWindow(QMainWindow):
         dialog.exec_()
 
     def _cancel_mcp_for_target_change(self):
+        self.analysis_sessions.clear()
+        manual=getattr(self,"current_worker",None)
+        if manual and manual.isRunning() and hasattr(manual,"analysis_progress"):
+            manual.cancel()
         worker = getattr(self, "ai_worker", None)
         if worker and worker.isRunning() and getattr(worker, "is_mcp", False):
             worker.cancel()
@@ -3759,6 +3921,10 @@ class ReaMainWindow(QMainWindow):
             if event["status"] == "running" and phase == "Ghidra ilk analiz":
                 self.append_log("Ghidra ilk analizi hazırlanıyor: " + html.escape(event["tool"]) +
                     " · bekleme payı " + str(int(event["timeout_seconds"])) + " sn. Durdur kullanılabilir.", "info")
+            if event.get("cache_hit"):
+                self.append_log("Önbellekten kullanıldı: " + html.escape(event["tool"]), "info")
+            if event.get("fallback_from"):
+                self.append_log("Alternatif motor: " + html.escape(str(event.get("engine", ""))), "warn")
             self.lbl_ai_status.setText("MCP çalışıyor…")
             self.append_log("MCP " + html.escape(event["tool"]) + " · " + event["status"], "run" if event["status"] == "running" else "success" if event["status"] == "ok" else "warn")
         self._trim_mcp_history()
@@ -3773,6 +3939,7 @@ class ReaMainWindow(QMainWindow):
         if index is not None:
             self.mcp_runs[index] = record
         if worker is self.ai_worker and worker.target_context == self._analysis_target_context():
+            self.lbl_analysis_progress.setText("Analiz: "+record["status"])
             count = sum(e["status"] == "ok" for e in record["events"])
             self.lbl_mcp_status.setText("MCP: " + record["status"] + " · başarılı çağrı: " + str(count))
         self._trim_mcp_history()
@@ -3863,7 +4030,7 @@ class ReaMainWindow(QMainWindow):
                 from rea_chatgpt import CloudCopilotWorker, CloudChatWorker
                 if use_mcp:
                     worker = CloudCopilotWorker(self.cloud_store, model, messages, self.target_path,
-                        self.settings.get("rea_bin", REA_BIN_PATH), context_limit=int(self.settings.get("context_char_limit", 12000)))
+                        self.settings.get("rea_bin", REA_BIN_PATH), context_limit=int(self.settings.get("context_char_limit", 12000)),session_pool=self.analysis_sessions)
                     worker.target_context = self._analysis_target_context()
                     worker.provider_id = "chatgpt"
                 else:
@@ -3873,7 +4040,7 @@ class ReaMainWindow(QMainWindow):
                 worker = McpCopilotWorker(server_base, api_key, model, messages, self.target_path,
                     self.settings.get("rea_bin", REA_BIN_PATH), temperature=self.settings.get("temperature", .3),
                     max_tokens=int(self.settings.get("response_token_limit", 1024)),
-                    context_limit=int(self.settings.get("context_char_limit", 12000)), provider=self.settings["provider"])
+                    context_limit=int(self.settings.get("context_char_limit", 12000)), provider=self.settings["provider"],session_pool=self.analysis_sessions)
                 worker.target_context = self._analysis_target_context()
                 worker.provider_id = self.settings["provider"]
             else:
@@ -3908,6 +4075,7 @@ class ReaMainWindow(QMainWindow):
         self.ai_worker.chunk_received.connect(self._on_ai_chunk)
         self.ai_worker.completed.connect(self._on_ai_completed)
         self.ai_worker.cancelled.connect(self._on_ai_cancelled)
+        if use_mcp:self.ai_worker.analysis_progress.connect(self._on_analysis_progress)
         self.ai_worker.failed.connect(self._on_ai_failed)
         self.ai_worker.finished.connect(self._on_ai_finished)
         self._request_started = time.monotonic()

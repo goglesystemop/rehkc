@@ -384,9 +384,9 @@ class ResponsesTransport:
 
 
 class CloudCopilotWorker(ResponsesTransport,McpCopilotWorker):
-    def __init__(self,store,model,messages,target,rea_bin,context_limit=12000):
+    def __init__(self,store,model,messages,target,rea_bin,context_limit=12000,session_pool=None):
         self.store=store;self.account_id=store.summary()['active'];self.native_groups={}
-        super().__init__(RESOURCE,'',model,messages,target,rea_bin,context_limit=context_limit,provider='chatgpt')
+        super().__init__(RESOURCE,'',model,messages,target,rea_bin,context_limit=context_limit,provider='chatgpt',session_pool=session_pool)
     def fit(self,tools):
         messages=super().fit(tools)
         # Native encrypted reasoning and namespace wrappers also count toward the character budget.

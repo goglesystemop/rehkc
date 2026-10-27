@@ -19,8 +19,10 @@ aynı dosyada 89 saniyede geçen işlem biraz yavaşlayınca kesilebiliyordu.
 hazırlığı ilk `list_procedures`/decompile çağrısında olur. Bu nedenle yalnız
 `open_binary` başarılı oldu diye uzun ilk analiz bütçesi kaldırılmaz. İlk gerçek
 Ghidra sorgusu başarıyla tamamlanınca sonraki sorgular normal bütçeye geçer.
-Hatalı bir ilk sonuç bu geçişi tetiklemez. Her yeni sohbet MCP isteği hâlâ özel,
-yeni bir analiz oturumu açar; oturumlar arasında analiz önbelleği eklendiği iddia edilmez.
+Hatalı bir ilk sonuç bu geçişi tetiklemez. Yerel geliştirmede pencereye özel MCP bağlantısı aynı dosya ve motor kimliğiyle
+yeniden kullanılabilir; 5 dakika boş kalınca kapanır. Başarılı işlem sonuçları da
+kalıcı önbellekten gelir. Açık oturum yoksa önbellekte olmayan derin sorgu için
+Ghidra yeniden analiz yapabilir. [Aşamalı analiz ve önbellek](STAGED-ANALYSIS.md).
 
 REA'nın kendi `REA_GHIDRA_STARTUP_TIMEOUT_MS` değeri MCP alt süreci için
 varsayılan 900000 olarak ayarlanır. Kullanıcının önceden verdiği pozitif değer

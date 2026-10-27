@@ -23,8 +23,8 @@ with tempfile.TemporaryDirectory(prefix='rehkc-managed-live-') as temporary:
         'JAVA_HOME','GHIDRA_INSTALL_DIR','RETDEC_INSTALL_DIR','REHKC_INSTALL_ROOT',
         'REHKC_TOOLS_DIR','LD_LIBRARY_PATH','R2_PREFIX','PYTHONPATH','PYTHONHOME')}
     env.update(PATH='/usr/bin:/bin', REHKC_CONFIG_DIR=str(base/'config'), REHKC_DATA_DIR=str(base/'data'))
-    def run(*command, timeout=600, **kwargs):
-        completed = subprocess.run(list(map(str, command)), env=env, stdout=subprocess.PIPE,
+    def run(*command, timeout=600, extra_env=None, **kwargs):
+        completed = subprocess.run(list(map(str, command)), env=dict(env, **(extra_env or {})), stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, timeout=timeout, **kwargs)
         if completed.returncode:raise AssertionError(completed.stdout[-6000:])
         return completed.stdout
@@ -54,6 +54,24 @@ with tempfile.TemporaryDirectory(prefix='rehkc-managed-live-') as temporary:
     assert 'return' in decompiled and 'ghidra' in decompiled.lower(), decompiled[-5000:]
     result['rea_ghidra_bridge'] = True
     result['decompile_excerpt'] = decompiled[-2500:]
+    # Exercise the same staged/cache/fallback path used by GUI and MCP, through
+    # the installed normal launcher. All selected target bytes are generated here.
+    import shlex
+    adapter = base/'normal-engine'
+    adapter.write_text('#!/bin/sh\nexec '+shlex.quote(str(launcher))+' --engine "$@"\n')
+    adapter.chmod(0o755)
+    staged_report = base/'staged.json'
+    assembly = base/'retdec-probe.s'
+    assembly.write_text('.text\n.globl _start\n_start:\n lea (%rdi,%rdi,2), %rax\n add %rsi, %rax\n ret\n')
+    obj = base/'retdec-probe.o'
+    retdec_target = base/'retdec-probe.elf'
+    run('/usr/bin/as','--64',assembly,'-o',obj)
+    run('/usr/bin/ld','-Ttext=0x401000','-e','_start',obj,'-o',retdec_target)
+    run(package/'runtime/python/bin/python3', Path(__file__).with_name('staged_live_probe.py'),
+        '--package', prefix/'current', '--engine', adapter, '--target', target,
+        '--procedure', '0x400078', '--report', staged_report, '--retdec-target', retdec_target, timeout=600,
+        extra_env={'REHKC_INSTALL_ROOT':str(prefix)})
+    result['staged_analysis'] = json.loads(staged_report.read_text())
     # Reinstall is idempotent and a second dependency check remains valid.
     run('/bin/sh', package/'install.sh', '--data-dir', prefix,
         '--bin-dir', base/'bin', '--desktop-dir', base/'applications', '--no-desktop')

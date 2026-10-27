@@ -50,7 +50,7 @@ Python’da bu destek yoksa aşağıdaki sürüm arşivi yöntemi kullanılabili
 ~/.local/bin/rehkc
 ```
 
-0.2.2 sürümü için ilk komut `REHKC 0.2.2 / REA 6.7.0` yazmalı;
+0.3.0 sürümü için ilk komut `REHKC 0.3.0 / REA 6.7.0` yazmalı;
 motor durumunda `"managed": true` ve sağlık bölümünde `"ok": true` görünmelidir.
 Sonraki açılışlarda uygulama menüsündeki **REHKC** simgesini kullanabilirsiniz.
 Haftalık güncelleme kontrolü uygulama açıkken otomatik yapılır; elle kontrol için:
@@ -98,7 +98,7 @@ aynı kurucu resmî, hash ile sabitlenmiş motor grubunu kullanıcıya özel kur
 ~/.local/bin/rehkc
 ```
 
-Sürüm `REHKC 0.2.2 / REA 6.7.0`, motor sağlığı `"ok": true` olmalıdır.
+Sürüm `REHKC 0.3.0 / REA 6.7.0`, motor sağlığı `"ok": true` olmalıdır.
 Sonrasında menüdeki **REHKC** simgesini kullanabilirsiniz. İki dağıtım ailesi de
 aynı kurucuyu, motorları ve haftalık güncelleme kontrolünü kullanır.
 
@@ -115,12 +115,12 @@ masaüstü testinin yapıldığı anlamına gelmez.
 ### Sürüm arşivinden kurulum
 
 [Releases](https://github.com/goglesystemop/rehkc/releases) sayfasından
-`rehkc-0.2.2-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
+`rehkc-0.3.0-linux-x86_64.tar.gz` ve `SHA256SUMS` dosyalarını indirin:
 
 ```sh
 sha256sum -c SHA256SUMS
-tar -xzf rehkc-0.2.2-linux-x86_64.tar.gz
-cd rehkc-0.2.2-linux-x86_64
+tar -xzf rehkc-0.3.0-linux-x86_64.tar.gz
+cd rehkc-0.3.0-linux-x86_64
 ./install.sh --check
 ./install.sh
 ```
@@ -177,3 +177,10 @@ kişisel hedef dosyaları ve büyük motor/runtime ikilileri Git'e eklenmez.
 
 GPLv3 masaüstü dağıtımı; orijinal bileşenlerin lisansları korunur.
 [Bileşenler ve kaynak bağlantıları](THIRD_PARTY_NOTICES.md).
+
+Aşamalı ön inceleme, önbellek ve Ghidra → RetDec/Radare2 geçişinin kapsamı:
+[Aşamalı analiz](docs/STAGED-ANALYSIS.md).
+
+[Yerel geliştirme ve 3–5 geliştirmede toplu yayın](docs/DEVELOPMENT.md).
+
+[İkinci yerel geliştirme grubu](docs/NEXT-LOCAL-BATCH.md).
