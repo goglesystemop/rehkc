@@ -10,6 +10,8 @@ import signal
 import stat
 import subprocess
 import time
+from rea_analysis import (StaticAnalysis, ResultCache, digest_file, engine_identity,
+                          memory_policy, signature, evidence, observation)
 
 
 DEFAULT_ANALYSIS_TIMEOUT = 3600
@@ -37,10 +39,7 @@ class McpCancelled(Exception):
 
 
 def target_signature(path):
-    st = os.stat(path)
-    if not stat.S_ISREG(st.st_mode) or st.st_size > 128 * 1024 * 1024:
-        raise ValueError('MCP analizi için en fazla 128 MB normal dosya seçin.')
-    return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    return signature(path)
 
 
 def owned_children(root_pid):
@@ -76,12 +75,15 @@ class McpClient:
     MAX_MESSAGE = 8 * 1024 * 1024
 
     def __init__(self, binary, stopped, deadline, started=None):
+        self.binary = binary
         self.stopped, self.deadline = stopped, deadline
         self.started = time.monotonic() if started is None else started
         self.request_context = None
         self.last_operation = None
         environment = {k:v for k,v in os.environ.items() if k not in ('BUN_BE_BUN','HOPPER_TARGET_PATH','HOPPER_TARGET_KIND','HOPPER_LOADER_ARGS_JSON')}
         raw = environment.setdefault('REA_GHIDRA_STARTUP_TIMEOUT_MS', str(DEFAULT_GHIDRA_STARTUP_MS))
+        if not environment.get('GHIDRA_HEADLESS_MAXMEM') and not environment.get('GHIDRA_MAXMEM'):
+            environment['GHIDRA_HEADLESS_MAXMEM'] = memory_policy()['ghidra_heap']
         if not re.fullmatch(r'[1-9]\d*', raw) or int(raw) > 2147483647:
             raise ValueError('REA_GHIDRA_STARTUP_TIMEOUT_MS, 1..2147483647 arasında milisaniye olmalı.')
         self.ghidra_initial_timeout = int(raw)/1000 + GHIDRA_RESPONSE_GRACE
@@ -206,6 +208,8 @@ class McpClient:
         return info.get('serverInfo', {}), tools
 
     def close(self):
+        if getattr(self, '_closed', False):return
+        self._closed = True
         process = self.process
         children = owned_children(process.pid)
         try:
@@ -236,6 +240,8 @@ class McpClient:
 
 # The model never receives a path/provider/snapshot/shell argument.
 SCHEMAS = {
+    'inspect_file': ('Quick bounded static preflight: file size, PE architecture, entry point, sections, entropy and possible packer indicators. No global Ghidra analysis.', {}, []),
+    'quick_functions': ('Quick entry-point and symbol discovery with rabin2, without global analysis. Incomplete function inventory; use list_procedures only when full discovery is necessary.', {}, []),
     'inspect_with_objdump': ('Inspect the selected file with GNU objdump. For architecture/format use file_headers; for section tables use section_headers; for function names use symbols; for assembly use disassemble.',
         {'operation':{'type':'string','enum':['file_headers','section_headers','symbols','disassemble']},'symbol':{'type':'string','maxLength':256,'description':'Only for operation=disassemble. Omit for file_headers, section_headers and symbols.'}}, ['operation']),
     'inspect_binary_layout': ('Inspect ELF layout and security-related file declarations of the selected file.', {}, []),
@@ -248,19 +254,27 @@ SCHEMAS = {
 
 
 class SelectedTargetTools:
-    def __init__(self, client, path, inventory, emit, max_calls=8):
+    def __init__(self, client, path, inventory, emit, max_calls=8, digest=None, expected_signature=None):
         self.client, self.path, self.inventory, self.emit = client, str(Path(path).absolute()), inventory, emit
         self.signature = target_signature(self.path)
+        if expected_signature is not None and self.signature != expected_signature:
+            raise ValueError('Hedef ön inceleme sırasında değişti; analiz başlatılmadı.')
         self.calls = 0
         self.max_calls = max_calls
         self.events = []
         self.ready = False
         self.ghidra_initialized = False
+        self.primary_failed = None
+        self.analysis = StaticAnalysis(self.path, self.check)
+        self.cache = None
+        if getattr(client, 'binary', None):
+            self.cache = ResultCache(digest or digest_file(self.path, self.check), engine_identity(client.binary,self.check),target=self.path)
         self.available = {name for name in SCHEMAS if name in inventory}
         if not os.environ.get('REA_PWNTOOLS_PYTHON'):
             self.available.discard('inspect_binary_layout')
         if 'open_binary' not in inventory or 'provider_id' not in inventory['open_binary'].get('inputSchema',{}).get('properties',{}):
             self.available &= {'inspect_with_objdump','inspect_binary_layout'}
+        self.available.update(('inspect_file','quick_functions'))
         if not self.available:
             raise ValueError('Bu MCP sunucusu desteklenen statik araçları bildirmedi.')
 
@@ -288,6 +302,10 @@ class SelectedTargetTools:
             self.check()
             is_error = result.get('isError') is True
             structured = result.get('structuredContent')
+            if result.get('cache_hit'):event['cache_hit'] = True
+            if isinstance(structured, dict):
+                for field in ('cache_hit','engine','partial','fallback_from'):
+                    if field in structured:event[field] = structured[field]
             if isinstance(structured, dict) and structured.get('ok') is False:
                 is_error = True
             event['status'] = 'error' if is_error else 'ok'
@@ -298,7 +316,7 @@ class SelectedTargetTools:
                         value=json.loads(next((b.get('text','') for b in result.get('content',[]) if b.get('type')=='text'),''))
                     except (ValueError,TypeError):value={}
                 code=value.get('error',{}).get('code') if isinstance(value,dict) and isinstance(value.get('error'),dict) else None
-                if code in ('provider_unavailable','unreadable_output'):
+                if code in ('provider_unavailable','unreadable_output') and not self.cache:
                     self.available.discard(name)
                     if name=='open_binary':
                         self.available &= {'inspect_with_objdump','inspect_binary_layout'}
@@ -319,11 +337,21 @@ class SelectedTargetTools:
             self.events.append(event)
             self.emit(dict(event))
 
-    def execute(self, name, arguments):
-        uses_ghidra = name not in ('inspect_with_objdump','inspect_binary_layout')
+    def execute(self, name, arguments, requested_by='copilot'):
+        uses_ghidra = name not in ('inspect_with_objdump','inspect_binary_layout','inspect_file','quick_functions')
         initial = uses_ghidra and not self.ghidra_initialized
         timeout = self.client.ghidra_initial_timeout if initial else DEFAULT_TOOL_TIMEOUT
         phase = 'Ghidra ilk analiz' if initial else 'Ghidra' if uses_ghidra else 'statik araç'
+        fallback_active = [False]
+        def alternative(supplied, reason):
+            fallback_active[0] = True
+            cached=self.cache.get('alternative/'+name,supplied) if self.cache else None
+            if cached is not None:
+                self.check();cached['cache_hit']=True
+                return cached
+            result=self.analysis.fallback(name,supplied,reason)
+            if self.cache:self.cache.put('alternative/'+name,supplied,result)
+            return result
         def operation():
             if name not in self.available:
                 raise ValueError('Bu araç statik analiz kapsamında izinli değil: '+str(name)[:80])
@@ -341,6 +369,26 @@ class SelectedTargetTools:
                 if 'enum' in props[key] and value not in props[key]['enum']:
                     raise ValueError('Bu objdump işlemi izinli değil.')
             args = dict(supplied)
+            cached = self.cache.get(name, supplied) if self.cache and name != 'inspect_file' else None
+            if cached is not None:
+                self.check()
+                cached['cache_hit'] = True
+                return cached
+            def save(result):
+                self.check()
+                structured = result.get('structuredContent')
+                if not isinstance(structured, dict):structured={}
+                if not result.get('isError') and structured.get('ok') is not False and not structured.get('fallback_from'):
+                    if self.cache:self.cache.put(name, supplied, result)
+                return result
+            if name == 'inspect_file':
+                return evidence('static-preflight', name, self.analysis.preflight())
+            if name == 'quick_functions':
+                return save(self.analysis.quick_functions())
+            if uses_ghidra and self.cache and memory_policy()['available_bytes'] < 768*1024**2:
+                return alternative(supplied, 'Ghidra için kullanılabilir bellek 768 MiB altında; JVM başlatılmadı.')
+            if uses_ghidra and self.primary_failed is not None:
+                return alternative(supplied, self.primary_failed)
             if name in ('inspect_with_objdump','inspect_binary_layout'):
                 args['path']=self.path
                 if name=='inspect_with_objdump':
@@ -355,15 +403,42 @@ class SelectedTargetTools:
                         lambda:self.client.call('tools/call', {'name':'open_binary','arguments':{'path':self.path,'provider_id':'ghidra'}}, timeout=self.client.ghidra_initial_timeout, operation='Ghidra ilk analiz / open_binary'),
                         phase='Ghidra ilk analiz', timeout=self.client.ghidra_initial_timeout)
                     if self.events[-1]['status']!='ok':
+                        if self.cache:
+                            self.primary_failed = 'Ghidra open_binary başarısız: '+json.dumps(opened,ensure_ascii=False)[:1200]
+                            return alternative(supplied, self.primary_failed)
                         return opened
                     self.ready=True
                 if name=='search_strings':
                     args.update(mode='literal',case_sensitive=False)
-            result = self.client.call('tools/call', {'name':name,'arguments':args}, timeout=timeout, operation=phase+' / '+name)
+            try:
+                result = self.client.call('tools/call', {'name':name,'arguments':args}, timeout=timeout, operation=phase+' / '+name)
+            except (TimeoutError, RuntimeError) as exc:
+                self.check()  # Cancellation/overall deadline must never start another engine.
+                if not uses_ghidra or not self.cache:raise
+                self.primary_failed = str(exc)
+                self.client.close()
+                self.available.discard('inspect_with_objdump');self.available.discard('inspect_binary_layout')
+                return alternative(supplied, exc)
+            if uses_ghidra and (result.get('isError') or result.get('structuredContent',{}).get('ok') is False) and self.cache:
+                return alternative(supplied, json.dumps(result,ensure_ascii=False)[:1200])
+            if name=='procedure_pseudo_code' and self.cache:
+                value=observation(result)
+                code=value.get('normalized_result',value.get('observed_result'))
+                if not isinstance(code,str) or not code.strip():
+                    return alternative(supplied, 'Ghidra seçili fonksiyon için kod gövdesi üretmedi.')
             if uses_ghidra and not result.get('isError') and not (isinstance(result.get('structuredContent'),dict) and result['structuredContent'].get('ok') is False):
                 self.ghidra_initialized = True
-            return result
-        return self.record(name, arguments, 'copilot', operation, phase=phase, timeout=timeout)
+            return save(result)
+        def attempt():
+            try:return operation()
+            except (TimeoutError, RuntimeError) as exc:
+                self.check()
+                if fallback_active[0] or not uses_ghidra or not self.cache:raise
+                self.primary_failed=str(exc)
+                self.client.close()
+                self.available.discard('inspect_with_objdump');self.available.discard('inspect_binary_layout')
+                return alternative(arguments, exc)
+        return self.record(name, arguments, requested_by, attempt, phase=phase, timeout=timeout)
 
 
 def validate_runs(runs):

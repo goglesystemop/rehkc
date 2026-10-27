@@ -13,7 +13,7 @@ import time
 
 APP = Path(__file__).resolve().parent
 ROOT = APP.parent
-VERSION = '0.2.2'
+VERSION = '0.3.0'
 sys.path.insert(0, str(APP))
 
 
